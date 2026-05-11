@@ -8,7 +8,6 @@ import {
   RiBookOpenLine,
   RiPlugLine,
   RiServerLine,
-  RiToolsLine,
   RiLogoutBoxRLine,
 } from "react-icons/ri";
 
@@ -24,7 +23,6 @@ const NAV = [
   { to: "/skills", label: "Skills", icon: RiBookOpenLine },
   { to: "/connectors", label: "Connectors", icon: RiPlugLine },
   { to: "/mcp", label: "MCP", icon: RiServerLine },
-  { to: "/tools", label: "Tools", icon: RiToolsLine },
 ];
 
 export default function Sidebar() {

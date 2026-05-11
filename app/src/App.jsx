@@ -17,7 +17,6 @@ import Cron from "@/pages/cron";
 import Skills from "@/pages/skills";
 import Connectors from "@/pages/connectors";
 import Mcp from "@/pages/mcp";
-import Tools from "@/pages/tools";
 
 export default function App() {
   return (
@@ -42,7 +41,6 @@ export default function App() {
             <Route path="/skills/*" element={<Skills />} />
             <Route path="/connectors/*" element={<Connectors />} />
             <Route path="/mcp/*" element={<Mcp />} />
-            <Route path="/tools/*" element={<Tools />} />
           </Route>
         </Route>
 
