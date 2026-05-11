@@ -22,7 +22,9 @@ export default function Auth() {
 
 function SignIn() {
   const { setUser, setOrganization } = useStore();
-  const [form, setForm] = useState({ email: "", password: "" });
+  const [form, setForm] = useState(
+    import.meta.env.DEV ? { email: "se.legoff@gmail.com", password: "coucou" } : { email: "", password: "" },
+  );
   const [loading, setLoading] = useState(false);
 
   async function submit(e) {

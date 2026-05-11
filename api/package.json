@@ -11,6 +11,7 @@
     "printWidth": 180
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "bcryptjs": "^2.4.3",
     "body-parser": "^1.20.3",
     "cookie-parser": "^1.4.7",
@@ -20,7 +21,8 @@
     "mongoose": "^8.8.0",
     "morgan": "^1.10.0",
     "passport": "^0.7.0",
-    "passport-jwt": "^4.0.1"
+    "passport-jwt": "^4.0.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "nodemon": "^3.1.7"

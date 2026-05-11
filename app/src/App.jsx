@@ -8,6 +8,7 @@ import Loader from "@/components/loader";
 import Layout from "@/components/layout";
 
 import Auth from "@/pages/auth";
+import OauthAuthorize from "@/pages/auth/oauth-authorize";
 import Tasks from "@/pages/tasks";
 import Chat from "@/pages/chat";
 import Agents from "@/pages/agents";
@@ -23,6 +24,9 @@ export default function App() {
     <BrowserRouter>
       <Toaster position="top-center" />
       <Routes>
+        {/* OAuth consent — handles its own auth check (login redirect if needed) */}
+        <Route path="/oauth/authorize" element={<OauthAuthorize />} />
+
         <Route element={<AuthGate />}>
           <Route path="/auth/*" element={<Auth />} />
         </Route>
