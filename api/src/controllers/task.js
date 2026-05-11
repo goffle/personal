@@ -21,8 +21,13 @@ router.post("/search", auth, async (req, res) => {
       query.$or = [{ title: re }, { description: re }];
     }
     if (req.body.organization_id) query.organization_id = req.body.organization_id;
-    if (req.body.status) query.status = req.body.status;
+    if (Array.isArray(req.body.status)) {
+      if (req.body.status.length) query.status = { $in: req.body.status };
+    } else if (req.body.status) {
+      query.status = req.body.status;
+    }
     if (req.body.assignee_id) query.assignee_id = req.body.assignee_id;
+    if (req.body.assignee_type) query.assignee_type = req.body.assignee_type;
     if (req.body.priority) query.priority = req.body.priority;
     if (req.body.entity) query.entity = req.body.entity;
     if (req.body.sprint) query.sprint = req.body.sprint;
@@ -49,7 +54,13 @@ router.get("/:id", auth, async (req, res) => {
 
 router.post("/", auth, async (req, res) => {
   try {
-    const data = await Task.create({ ...req.body, created_by: req.user._id.toString() });
+    const payload = { ...req.body, created_by: req.user._id.toString() };
+    if (!payload.assignee_id) {
+      payload.assignee_id = req.user._id.toString();
+      payload.assignee_name = `${req.user.firstname || ""} ${req.user.lastname || ""}`.trim() || req.user.email;
+      payload.assignee_type = "user";
+    }
+    const data = await Task.create(payload);
     return res.status(200).send({ ok: true, data });
   } catch (err) {
     console.error(err);

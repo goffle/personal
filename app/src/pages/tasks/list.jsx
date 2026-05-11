@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RiAddLine, RiDeleteBin6Line, RiSearchLine } from "react-icons/ri";
+import { RiAddLine, RiArrowDownSLine, RiRobot2Line, RiSearchLine, RiUserLine } from "react-icons/ri";
 
 import API from "@/services/api";
 import useStore from "@/services/store";
@@ -10,15 +10,21 @@ import Modal from "@/components/modal";
 import { STATUSES, ENTITIES, statusMeta, entityLabel } from "./constants";
 import { sprintOptions, sprintLabel, currentSprint } from "./sprints";
 
+const PRIORITY_CHIPS = {
+  low: "bg-slate-100 text-slate-600",
+  medium: "bg-blue-100 text-blue-800",
+  high: "bg-red-100 text-red-800",
+};
+
 export default function TaskList() {
   const navigate = useNavigate();
   const { organization } = useStore();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState(() => STATUSES.filter((s) => s.value !== "done").map((s) => s.value));
   const [entityFilter, setEntityFilter] = useState("");
-  const [sprintFilter, setSprintFilter] = useState("");
+  const [sprintFilter, setSprintFilter] = useState(() => currentSprint());
   const [showCreate, setShowCreate] = useState(false);
 
   const SPRINT_FILTER_OPTIONS = sprintOptions();
@@ -28,7 +34,7 @@ export default function TaskList() {
     const r = await API.post("/task/search", {
       search,
       organization_id: organization?._id,
-      status: statusFilter || undefined,
+      status: statusFilter.length ? statusFilter : undefined,
       entity: entityFilter || undefined,
       sprint: sprintFilter || undefined,
       limit: 100,
@@ -47,17 +53,6 @@ export default function TaskList() {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
-
-  async function remove(task) {
-    if (!confirm(`Delete "${task.title}"?`)) return;
-    const r = await API.remove(`/task/${task._id}`);
-    if (r.ok) {
-      toast.success("Task deleted");
-      load();
-    } else {
-      toast.error("Delete failed");
-    }
-  }
 
   return (
     <div className="mx-auto max-w-6xl p-6">
@@ -84,16 +79,7 @@ export default function TaskList() {
             className="w-full rounded-md border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-slate-500"
           />
         </div>
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">All statuses</option>
-          {STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
-        </select>
+        <StatusMultiSelect value={statusFilter} onChange={setStatusFilter} />
         <select
           value={entityFilter}
           onChange={(e) => setEntityFilter(e.target.value)}
@@ -123,11 +109,11 @@ export default function TaskList() {
               <th className="px-4 py-2.5">Ref</th>
               <th className="px-4 py-2.5">Title</th>
               <th className="px-4 py-2.5">Status</th>
+              <th className="px-4 py-2.5">Priority</th>
               <th className="px-4 py-2.5">Entity</th>
               <th className="px-4 py-2.5">Sprint</th>
               <th className="px-4 py-2.5">Due</th>
-              <th className="px-4 py-2.5">Comments</th>
-              <th className="px-4 py-2.5"></th>
+              <th className="px-4 py-2.5">Assigned</th>
             </tr>
           </thead>
           <tbody>
@@ -140,10 +126,18 @@ export default function TaskList() {
             {!loading && items.map((t) => {
               const status = statusMeta(t.status);
               return (
-                <tr key={t._id} className="border-t border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500">{t.reference}</td>
+                <tr
+                  key={t._id}
+                  onClick={() => navigate(`/tasks/${t._id}`)}
+                  className="cursor-pointer border-t border-slate-100 transition-shadow hover:bg-slate-50 hover:shadow-[inset_0_0_0_1px_rgb(203_213_225)]"
+                >
+                  <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{t.reference}</td>
                   <td className="px-4 py-3">
-                    <Link to={`/tasks/${t._id}`} className="font-medium text-slate-900 hover:underline">
+                    <Link
+                      to={`/tasks/${t._id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="font-medium text-slate-900 hover:underline"
+                    >
                       {t.title}
                     </Link>
                     {t.description && <div className="line-clamp-1 text-xs text-slate-500">{t.description}</div>}
@@ -151,14 +145,25 @@ export default function TaskList() {
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.chip}`}>{status.label}</span>
                   </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_CHIPS[t.priority] || "bg-slate-100 text-slate-700"}`}>
+                      {t.priority || "—"}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 text-slate-600">{entityLabel(t.entity) || "—"}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{t.sprint || "—"}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">{t.sprint || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{t.due_at ? new Date(t.due_at).toLocaleDateString() : "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{t.comment_count || 0}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => remove(t)} className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600" title="Delete">
-                      <RiDeleteBin6Line className="h-4 w-4" />
-                    </button>
+                  <td className="px-4 py-3 text-slate-600">
+                    {t.assignee_name ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {t.assignee_type === "agent" ? (
+                          <RiRobot2Line className="h-3.5 w-3.5 text-violet-500" title="Agent" />
+                        ) : (
+                          <RiUserLine className="h-3.5 w-3.5 text-slate-400" title="User" />
+                        )}
+                        <span>{t.assignee_name}</span>
+                      </span>
+                    ) : "—"}
                   </td>
                 </tr>
               );
@@ -215,5 +220,60 @@ function CreateModal({ open, onClose, organizationId, onCreated }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+function StatusMultiSelect({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  function toggle(v) {
+    onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
+  }
+
+  const label =
+    value.length === 0
+      ? "No status"
+      : value.length === STATUSES.length
+        ? "All statuses"
+        : value.length === 1
+          ? STATUSES.find((s) => s.value === value[0])?.label || "1 status"
+          : `${value.length} statuses`;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+      >
+        <span>{label}</span>
+        <RiArrowDownSLine className="h-4 w-4 text-slate-400" />
+      </button>
+      {open && (
+        <div className="absolute left-0 z-10 mt-1 w-44 rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+          {STATUSES.map((s) => (
+            <label key={s.value} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked={value.includes(s.value)}
+                onChange={() => toggle(s.value)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span>{s.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -11,6 +11,7 @@ const TaskSchema = new mongoose.Schema(
     priority: { type: String, enum: ["low", "medium", "high"], default: "medium" },
     assignee_id: { type: String, index: true },
     assignee_name: { type: String },
+    assignee_type: { type: String, enum: ["user", "agent"], index: true },
     organization_id: { type: String, index: true },
     entity: { type: String, enum: ENTITIES, index: true },
     sprint: { type: String, index: true },
@@ -31,8 +32,16 @@ TaskSchema.index(
 
 TaskSchema.pre("validate", async function () {
   if (this.isNew && !this.reference && this.organization_id) {
-    const count = await mongoose.model("Task").countDocuments({ organization_id: this.organization_id });
-    this.reference = `TASK-${count + 1}`;
+    const docs = await mongoose
+      .model("Task")
+      .find({ organization_id: this.organization_id, reference: { $regex: /^TASK-\d+$/ } })
+      .select("reference")
+      .lean();
+    const max = docs.reduce((m, d) => {
+      const n = parseInt(d.reference.slice(5), 10);
+      return Number.isFinite(n) && n > m ? n : m;
+    }, 0);
+    this.reference = `TASK-${max + 1}`;
   }
 });
 

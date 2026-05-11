@@ -9,11 +9,12 @@ const STATUSES = ["todo", "doing", "waiting", "done"];
 function registerTaskTools(server) {
   server.tool(
     "search_tasks",
-    "Search tasks in the caller's workspace. Filters: search (text on title/description), status, assignee_id, priority, entity, sprint, reference, external_id. Returns: id, reference, title, status, priority, entity, sprint, due_at, assignee_id, comment_count, created_at. Examples: {status:'doing', entity:'selego'} → in-progress on Selego. {sprint:'Sprint 20', priority:'high'} → high-priority of Sprint 20.",
+    "Search tasks in the caller's workspace. Filters: search (text on title/description), status, assignee_id, assignee_type ('user' or 'agent'), priority, entity, sprint, reference, external_id. Returns: id, reference, title, status, priority, entity, sprint, due_at, assignee_id, assignee_type, comment_count, created_at. Examples: {status:'doing', entity:'selego'} → in-progress on Selego. {assignee_type:'agent'} → all tasks delegated to an agent.",
     {
       search: z.string().optional().describe("Text search on title or description"),
       status: z.enum(STATUSES).optional(),
       assignee_id: z.string().optional(),
+      assignee_type: z.enum(["user", "agent"]).optional(),
       priority: z.enum(["low", "medium", "high"]).optional(),
       entity: z.enum(ENTITIES).optional(),
       sprint: z.string().optional().describe("Exact match. Use ISO week format like '2026-W19' (current sprint) or 'Backlog'. Call get_current_sprint or list_sprints to discover valid names."),
@@ -33,6 +34,7 @@ function registerTaskTools(server) {
         }
         if (params.status) query.status = params.status;
         if (params.assignee_id) query.assignee_id = params.assignee_id;
+        if (params.assignee_type) query.assignee_type = params.assignee_type;
         if (params.priority) query.priority = params.priority;
         if (params.entity) query.entity = params.entity;
         if (params.sprint) query.sprint = params.sprint;
@@ -80,8 +82,9 @@ function registerTaskTools(server) {
       description: z.string().optional(),
       status: z.enum(STATUSES).default("todo").optional(),
       priority: z.enum(["low", "medium", "high"]).default("medium").optional(),
-      assignee_id: z.string().optional(),
+      assignee_id: z.string().optional().describe("Defaults to the calling user if omitted"),
       assignee_name: z.string().optional(),
+      assignee_type: z.enum(["user", "agent"]).optional().describe("'user' or 'agent'. Defaults to 'user' when assignee_id is omitted."),
       entity: z.enum(ENTITIES).optional().describe("walego, selego, jobego, tirana, tochet, or admin"),
       sprint: z.string().optional().describe("Sprint name as ISO week (e.g. '2026-W19') or 'Backlog'. Call get_current_sprint to get the current week."),
       due_at: z.string().optional().describe("ISO date string"),
@@ -112,8 +115,15 @@ function registerTaskTools(server) {
           organization_id: organizationId,
           created_by: user._id.toString(),
         };
-        if (params.assignee_id) payload.assignee_id = params.assignee_id;
-        if (params.assignee_name) payload.assignee_name = params.assignee_name;
+        if (params.assignee_id) {
+          payload.assignee_id = params.assignee_id;
+          if (params.assignee_name) payload.assignee_name = params.assignee_name;
+          if (params.assignee_type) payload.assignee_type = params.assignee_type;
+        } else {
+          payload.assignee_id = user._id.toString();
+          payload.assignee_name = `${user.firstname || ""} ${user.lastname || ""}`.trim() || user.email;
+          payload.assignee_type = "user";
+        }
         if (params.entity) payload.entity = params.entity;
         if (params.sprint) payload.sprint = params.sprint;
         if (params.due_at) payload.due_at = new Date(params.due_at);
@@ -138,6 +148,7 @@ function registerTaskTools(server) {
       priority: z.enum(["low", "medium", "high"]).optional(),
       assignee_id: z.string().nullable().optional(),
       assignee_name: z.string().nullable().optional(),
+      assignee_type: z.enum(["user", "agent"]).nullable().optional(),
       entity: z.enum(ENTITIES).optional(),
       sprint: z.string().nullable().optional(),
       due_at: z.string().nullable().optional(),

@@ -15,30 +15,54 @@ const SPRINT_OPTIONS = sprintOptions();
 export default function TaskDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { organization } = useStore();
+  const { organization, user } = useStore();
 
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingField, setSavingField] = useState(null);
 
   async function load() {
     setLoading(true);
-    const [t, c] = await Promise.all([API.get(`/task/${id}`), API.post("/comment/search", { task_id: id })]);
+    const [t, c, a] = await Promise.all([
+      API.get(`/task/${id}`),
+      API.post("/comment/search", { task_id: id }),
+      API.post("/agent/search", { organization_id: organization?._id, limit: 100 }),
+    ]);
     if (t.ok) setTask(t.data);
     if (c.ok) setComments(c.data);
+    if (a.ok) setAgents(a.data);
     setLoading(false);
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
-  async function patch(field, value) {
-    setSavingField(field);
-    const r = await API.put(`/task/${id}`, { [field]: value });
+  async function patch(fields) {
+    const keys = Object.keys(fields);
+    setSavingField(keys[0]);
+    const r = await API.put(`/task/${id}`, fields);
     if (r.ok) setTask(r.data);
     else toast.error("Update failed");
     setSavingField(null);
+  }
+
+  function meName() {
+    return `${user?.firstname || ""} ${user?.lastname || ""}`.trim() || user?.email || "Me";
+  }
+
+  function assigneeKey(t) {
+    if (!t?.assignee_id) return "";
+    return `${t.assignee_type || "user"}:${t.assignee_id}`;
+  }
+
+  function onAssigneeChange(key) {
+    if (!key) return patch({ assignee_id: null, assignee_name: null, assignee_type: null });
+    const [type, sid] = key.split(":");
+    if (type === "user") return patch({ assignee_id: sid, assignee_name: meName(), assignee_type: "user" });
+    const ag = agents.find((x) => x._id === sid);
+    return patch({ assignee_id: sid, assignee_name: ag?.name || "Agent", assignee_type: "agent" });
   }
 
   async function addComment(e) {
@@ -95,7 +119,7 @@ export default function TaskDetail() {
         <input
           value={task.title}
           onChange={(e) => setTask({ ...task, title: e.target.value })}
-          onBlur={(e) => patch("title", e.target.value)}
+          onBlur={(e) => patch({ title: e.target.value })}
           className="mt-1 w-full border-none bg-transparent text-2xl font-semibold text-slate-900 outline-none"
         />
 
@@ -104,21 +128,21 @@ export default function TaskDetail() {
             label="Status"
             value={task.status}
             options={STATUSES.map((s) => ({ value: s.value, label: s.label }))}
-            onChange={(v) => patch("status", v)}
+            onChange={(v) => patch({ status: v })}
             saving={savingField === "status"}
           />
           <FieldSelect
             label="Priority"
             value={task.priority}
             options={PRIORITIES.map((p) => ({ value: p, label: p }))}
-            onChange={(v) => patch("priority", v)}
+            onChange={(v) => patch({ priority: v })}
             saving={savingField === "priority"}
           />
           <FieldSelect
             label="Entity"
             value={task.entity || ""}
             options={[{ value: "", label: "—" }, ...ENTITIES]}
-            onChange={(v) => patch("entity", v || null)}
+            onChange={(v) => patch({ entity: v || null })}
             saving={savingField === "entity"}
           />
           <FieldSelect
@@ -129,15 +153,29 @@ export default function TaskDetail() {
               ...SPRINT_OPTIONS.map((s) => ({ value: s, label: sprintLabel(s) })),
               ...(task.sprint && !SPRINT_OPTIONS.includes(task.sprint) ? [{ value: task.sprint, label: task.sprint }] : []),
             ]}
-            onChange={(v) => patch("sprint", v || null)}
+            onChange={(v) => patch({ sprint: v || null })}
             saving={savingField === "sprint"}
+          />
+          <FieldSelect
+            label="Assigned"
+            value={assigneeKey(task)}
+            options={[
+              { value: "", label: "—" },
+              ...(user?._id ? [{ value: `user:${user._id}`, label: meName() }] : []),
+              ...agents.map((a) => ({ value: `agent:${a._id}`, label: a.name })),
+              ...(task.assignee_id && task.assignee_type === "agent" && !agents.find((a) => a._id === task.assignee_id)
+                ? [{ value: `agent:${task.assignee_id}`, label: task.assignee_name || "Agent" }]
+                : []),
+            ]}
+            onChange={onAssigneeChange}
+            saving={savingField === "assignee_id"}
           />
           <label className="flex items-center gap-2">
             <span className="text-xs uppercase tracking-wide text-slate-500">Due</span>
             <input
               type="date"
               value={task.due_at ? new Date(task.due_at).toISOString().slice(0, 10) : ""}
-              onChange={(e) => patch("due_at", e.target.value || null)}
+              onChange={(e) => patch({ due_at: e.target.value || null })}
               className="rounded-md border border-slate-300 px-2 py-1 text-sm"
             />
           </label>
@@ -146,7 +184,7 @@ export default function TaskDetail() {
         <textarea
           value={task.description || ""}
           onChange={(e) => setTask({ ...task, description: e.target.value })}
-          onBlur={(e) => patch("description", e.target.value)}
+          onBlur={(e) => patch({ description: e.target.value })}
           rows={5}
           placeholder="Add a description…"
           className="mt-4 w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:bg-white"
