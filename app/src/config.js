@@ -1,1 +1,1 @@
-export const apiURL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+export const apiURL = import.meta.env.PROD ? "https://api.jeeve.me" : "http://localhost:8080";
