@@ -16,6 +16,21 @@ const PRIORITY_CHIPS = {
   high: "bg-red-100 text-red-800",
 };
 
+function groupByEntity(items) {
+  const groups = new Map();
+  for (const t of items) {
+    const key = t.entity || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+  return [...groups.entries()].sort(([a], [b]) => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+    return a.localeCompare(b);
+  });
+}
+
 export default function TaskList() {
   const navigate = useNavigate();
   const { organization } = useStore();
@@ -37,7 +52,7 @@ export default function TaskList() {
       status: statusFilter.length ? statusFilter : undefined,
       entity: entityFilter || undefined,
       sprint: sprintFilter || undefined,
-      limit: 100,
+      limit: 1000,
     });
     if (r.ok) setItems(r.data);
     setLoading(false);
@@ -102,74 +117,25 @@ export default function TaskList() {
         </select>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-2.5">Ref</th>
-              <th className="px-4 py-2.5">Title</th>
-              <th className="px-4 py-2.5">Status</th>
-              <th className="px-4 py-2.5">Priority</th>
-              <th className="px-4 py-2.5">Entity</th>
-              <th className="px-4 py-2.5">Sprint</th>
-              <th className="px-4 py-2.5">Due</th>
-              <th className="px-4 py-2.5">Assigned</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center"><Loader /></td></tr>
-            )}
-            {!loading && items.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No tasks yet.</td></tr>
-            )}
-            {!loading && items.map((t) => {
-              const status = statusMeta(t.status);
-              return (
-                <tr
-                  key={t._id}
-                  onClick={() => navigate(`/tasks/${t._id}`)}
-                  className="cursor-pointer border-t border-slate-100 transition-shadow hover:bg-slate-50 hover:shadow-[inset_0_0_0_1px_rgb(203_213_225)]"
-                >
-                  <td className="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{t.reference}</td>
-                  <td className="px-4 py-3">
-                    <Link
-                      to={`/tasks/${t._id}`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="font-medium text-slate-900 hover:underline"
-                    >
-                      {t.title}
-                    </Link>
-                    {t.description && <div className="line-clamp-1 text-xs text-slate-500">{t.description}</div>}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.chip}`}>{status.label}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_CHIPS[t.priority] || "bg-slate-100 text-slate-700"}`}>
-                      {t.priority || "—"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{entityLabel(t.entity) || "—"}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-slate-600 whitespace-nowrap">{t.sprint || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{t.due_at ? new Date(t.due_at).toLocaleDateString() : "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {t.assignee_name ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        {t.assignee_type === "agent" ? (
-                          <RiRobot2Line className="h-3.5 w-3.5 text-violet-500" title="Agent" />
-                        ) : (
-                          <RiUserLine className="h-3.5 w-3.5 text-slate-400" title="User" />
-                        )}
-                        <span>{t.assignee_name}</span>
-                      </span>
-                    ) : "—"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {loading && (
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-8 text-center"><Loader /></div>
+      )}
+      {!loading && items.length === 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-8 text-center text-slate-500">No tasks yet.</div>
+      )}
+
+      <div className="space-y-4">
+        {!loading && groupByEntity(items).map(([entityKey, group]) => (
+          <section key={entityKey || "none"} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <header className="flex items-center gap-2 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <span>{entityLabel(entityKey) || "No entity"}</span>
+              <span className="font-normal text-slate-400">{group.length}</span>
+            </header>
+            <div className="divide-y divide-slate-100">
+              {group.map((t) => <TaskRow key={t._id} t={t} onOpen={() => navigate(`/tasks/${t._id}`)} />)}
+            </div>
+          </section>
+        ))}
       </div>
 
       <CreateModal
@@ -178,6 +144,46 @@ export default function TaskList() {
         organizationId={organization?._id}
         onCreated={(id) => navigate(`/tasks/${id}`)}
       />
+    </div>
+  );
+}
+
+function TaskRow({ t, onOpen }) {
+  const status = statusMeta(t.status);
+  return (
+    <div
+      onClick={onOpen}
+      className="grid cursor-pointer grid-cols-[100px_minmax(0,1fr)_110px_100px_110px_100px_160px] items-center gap-3 px-4 py-3 transition-shadow hover:bg-slate-50 hover:shadow-[inset_0_0_0_1px_rgb(203_213_225)]"
+    >
+      <div className="font-mono text-xs text-slate-500 whitespace-nowrap">{t.reference}</div>
+      <div className="min-w-0">
+        <Link to={`/tasks/${t._id}`} onClick={(e) => e.stopPropagation()} className="block truncate font-medium text-slate-900 hover:underline">
+          {t.title}
+        </Link>
+        {t.description && <div className="line-clamp-1 text-xs text-slate-500">{t.description}</div>}
+      </div>
+      <div>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.chip}`}>{status.label}</span>
+      </div>
+      <div>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_CHIPS[t.priority] || "bg-slate-100 text-slate-700"}`}>
+          {t.priority || "—"}
+        </span>
+      </div>
+      <div className="font-mono text-xs text-slate-600 whitespace-nowrap">{t.sprint || "—"}</div>
+      <div className="text-sm text-slate-600 whitespace-nowrap">{t.due_at ? new Date(t.due_at).toLocaleDateString() : "—"}</div>
+      <div className="text-sm text-slate-600 min-w-0">
+        {t.assignee_name ? (
+          <span className="flex items-center gap-1.5 min-w-0">
+            {t.assignee_type === "agent" ? (
+              <RiRobot2Line className="h-3.5 w-3.5 shrink-0 text-violet-500" title="Agent" />
+            ) : (
+              <RiUserLine className="h-3.5 w-3.5 shrink-0 text-slate-400" title="User" />
+            )}
+            <span className="truncate">{t.assignee_name}</span>
+          </span>
+        ) : "—"}
+      </div>
     </div>
   );
 }

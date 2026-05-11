@@ -39,12 +39,27 @@ export default function TaskDetail() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
+  function normField(k, v) {
+    if (v == null) return "";
+    if (k === "due_at") {
+      const d = new Date(v);
+      return Number.isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : "";
+    }
+    return String(v);
+  }
+
   async function patch(fields) {
+    const changed = Object.entries(fields).some(([k, v]) => normField(k, task?.[k]) !== normField(k, v));
+    if (!changed) return;
     const keys = Object.keys(fields);
     setSavingField(keys[0]);
     const r = await API.put(`/task/${id}`, fields);
-    if (r.ok) setTask(r.data);
-    else toast.error("Update failed");
+    if (r.ok) {
+      setTask(r.data);
+      toast.success("Saved", { duration: 1500 });
+    } else {
+      toast.error("Update failed");
+    }
     setSavingField(null);
   }
 
