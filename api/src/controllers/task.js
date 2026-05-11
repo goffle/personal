@@ -24,6 +24,9 @@ router.post("/search", auth, async (req, res) => {
     if (req.body.status) query.status = req.body.status;
     if (req.body.assignee_id) query.assignee_id = req.body.assignee_id;
     if (req.body.priority) query.priority = req.body.priority;
+    if (req.body.entity) query.entity = req.body.entity;
+    if (req.body.sprint) query.sprint = req.body.sprint;
+    if (req.body.reference) query.reference = req.body.reference;
 
     const sort = req.body.sort || { created_at: -1 };
     const [data, total] = await Promise.all([Task.find(query).sort(sort).skip(skip).limit(limit), Task.countDocuments(query)]);

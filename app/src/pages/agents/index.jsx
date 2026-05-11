@@ -1,21 +1,12 @@
-import PlaceholderList from "@/components/placeholder-list";
+import { Route, Routes } from "react-router-dom";
+import AgentList from "./list";
+import AgentDetail from "./detail";
 
 export default function Agents() {
   return (
-    <PlaceholderList
-      title="Agents"
-      resource="/agent"
-      fields={[
-        { key: "name", label: "Name", required: true },
-        { key: "reference", label: "Reference" },
-        { key: "sound_url", label: "Sound URL" },
-        { key: "system_prompt", label: "System prompt", textarea: true },
-      ]}
-      columns={[
-        { key: "name", label: "Name" },
-        { key: "reference", label: "Reference" },
-        { key: "model", label: "Model" },
-      ]}
-    />
+    <Routes>
+      <Route index element={<AgentList />} />
+      <Route path=":id" element={<AgentDetail />} />
+    </Routes>
   );
 }

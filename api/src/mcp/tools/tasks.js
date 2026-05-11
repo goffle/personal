@@ -3,15 +3,21 @@ const Task = require("../../models/task");
 const Comment = require("../../models/comment");
 const { sanitizeSearch, formatResult, formatError, resolveCaller, taskUrl } = require("./_shared");
 
+const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin"];
+const STATUSES = ["todo", "doing", "waiting", "done"];
+
 function registerTaskTools(server) {
   server.tool(
     "search_tasks",
-    "Search tasks in the caller's workspace. Filters by text, status, assignee, priority. Returns id, title, status, priority, due_at, assignee, comment_count, created_at.",
+    "Search tasks in the caller's workspace. Filters by text, status, assignee, priority, entity, sprint, reference. Returns id, reference, title, status, priority, entity, sprint, due_at, assignee, comment_count, created_at.",
     {
       search: z.string().optional().describe("Text search on title or description"),
-      status: z.enum(["todo", "doing", "done"]).optional(),
+      status: z.enum(STATUSES).optional(),
       assigneeId: z.string().optional(),
       priority: z.enum(["low", "medium", "high"]).optional(),
+      entity: z.enum(ENTITIES).optional(),
+      sprint: z.string().optional().describe("Exact match, e.g. 'Sprint 20' or 'Backlog'"),
+      reference: z.string().optional().describe("Exact reference match, e.g. 'TASK-12'"),
       limit: z.number().min(1).max(200).default(50).optional(),
       offset: z.number().min(0).default(0).optional(),
       sort: z.string().default("-created_at").optional(),
@@ -27,6 +33,9 @@ function registerTaskTools(server) {
         if (params.status) query.status = params.status;
         if (params.assigneeId) query.assignee_id = params.assigneeId;
         if (params.priority) query.priority = params.priority;
+        if (params.entity) query.entity = params.entity;
+        if (params.sprint) query.sprint = params.sprint;
+        if (params.reference) query.reference = params.reference;
 
         const [total, items] = await Promise.all([
           Task.countDocuments(query),
@@ -46,7 +55,7 @@ function registerTaskTools(server) {
 
   server.tool(
     "get_task",
-    "Get a single task by ID, with its comments.",
+    "Get a single task by ID, with its comments. Returned task includes reference, entity, sprint.",
     { id: z.string().describe("MongoDB ObjectId of the task") },
     async (params, extra) => {
       try {
@@ -63,14 +72,16 @@ function registerTaskTools(server) {
 
   server.tool(
     "create_task",
-    "Create a task in the caller's workspace.",
+    "Create a task in the caller's workspace. A human-readable reference (e.g. TASK-12) is assigned automatically and returned on the task.",
     {
       title: z.string().describe("Required"),
       description: z.string().optional(),
-      status: z.enum(["todo", "doing", "done"]).default("todo").optional(),
+      status: z.enum(STATUSES).default("todo").optional(),
       priority: z.enum(["low", "medium", "high"]).default("medium").optional(),
       assigneeId: z.string().optional(),
       assigneeName: z.string().optional(),
+      entity: z.enum(ENTITIES).optional().describe("walego, selego, jobego, tirana, tochet, or admin"),
+      sprint: z.string().optional().describe("Free string, e.g. 'Sprint 20' or 'Backlog'"),
       dueAt: z.string().optional().describe("ISO date string"),
     },
     async (params, extra) => {
@@ -86,6 +97,8 @@ function registerTaskTools(server) {
         };
         if (params.assigneeId) payload.assignee_id = params.assigneeId;
         if (params.assigneeName) payload.assignee_name = params.assigneeName;
+        if (params.entity) payload.entity = params.entity;
+        if (params.sprint) payload.sprint = params.sprint;
         if (params.dueAt) payload.due_at = new Date(params.dueAt);
         const task = await Task.create(payload);
         return formatResult({ created: true, task: { ...task.toObject(), url: taskUrl(task._id) } });
@@ -97,17 +110,19 @@ function registerTaskTools(server) {
 
   server.tool(
     "update_task",
-    "Update task fields.",
+    "Update task fields. The reference is immutable and cannot be changed.",
     {
       id: z.string(),
       fields: z
         .object({
           title: z.string().optional(),
           description: z.string().optional(),
-          status: z.enum(["todo", "doing", "done"]).optional(),
+          status: z.enum(STATUSES).optional(),
           priority: z.enum(["low", "medium", "high"]).optional(),
           assignee_id: z.string().optional(),
           assignee_name: z.string().optional(),
+          entity: z.enum(ENTITIES).optional(),
+          sprint: z.string().nullable().optional(),
           due_at: z.string().nullable().optional(),
         })
         .describe("Fields to update (snake_case)"),
