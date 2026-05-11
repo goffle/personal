@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { RiAddLine, RiDeleteBin6Line, RiSearchLine } from "react-icons/ri";
 
 import API from "@/services/api";
 import useStore from "@/services/store";
-import Modal from "@/components/modal";
 import Loader from "@/components/loader";
+import Modal from "@/components/modal";
 import { STATUSES, ENTITIES, statusMeta, entityLabel } from "./constants";
+import { sprintOptions, sprintLabel, currentSprint } from "./sprints";
 
 export default function TaskList() {
+  const navigate = useNavigate();
   const { organization } = useStore();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -18,6 +20,8 @@ export default function TaskList() {
   const [entityFilter, setEntityFilter] = useState("");
   const [sprintFilter, setSprintFilter] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+
+  const SPRINT_FILTER_OPTIONS = sprintOptions();
 
   async function load() {
     setLoading(true);
@@ -36,19 +40,13 @@ export default function TaskList() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organization?._id, statusFilter, entityFilter]);
+  }, [organization?._id, statusFilter, entityFilter, sprintFilter]);
 
   useEffect(() => {
     const id = setTimeout(load, 250);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, sprintFilter]);
-
-  const sprintOptions = useMemo(() => {
-    const set = new Set();
-    items.forEach((t) => t.sprint && set.add(t.sprint));
-    return Array.from(set).sort();
-  }, [items]);
+  }, [search]);
 
   async function remove(task) {
     if (!confirm(`Delete "${task.title}"?`)) return;
@@ -66,7 +64,7 @@ export default function TaskList() {
       <header className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Tasks</h1>
-          <p className="text-sm text-slate-500">{items.length} task{items.length === 1 ? "" : "s"}</p>
+          <p className="text-sm text-slate-500">{items.length} task{items.length === 1 ? "" : "s"} · Current sprint <span className="font-mono">{currentSprint()}</span></p>
         </div>
         <button
           onClick={() => setShowCreate(true)}
@@ -106,16 +104,16 @@ export default function TaskList() {
             <option key={e.value} value={e.value}>{e.label}</option>
           ))}
         </select>
-        <input
+        <select
           value={sprintFilter}
           onChange={(e) => setSprintFilter(e.target.value)}
-          placeholder="Sprint…"
-          list="sprint-options"
-          className="w-40 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
-        />
-        <datalist id="sprint-options">
-          {sprintOptions.map((s) => <option key={s} value={s} />)}
-        </datalist>
+          className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm"
+        >
+          <option value="">All sprints</option>
+          {SPRINT_FILTER_OPTIONS.map((s) => (
+            <option key={s} value={s}>{sprintLabel(s)}</option>
+          ))}
+        </select>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -154,7 +152,7 @@ export default function TaskList() {
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${status.chip}`}>{status.label}</span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{entityLabel(t.entity) || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{t.sprint || "—"}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-600">{t.sprint || "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{t.due_at ? new Date(t.due_at).toLocaleDateString() : "—"}</td>
                   <td className="px-4 py-3 text-slate-600">{t.comment_count || 0}</td>
                   <td className="px-4 py-3 text-right">
@@ -172,89 +170,46 @@ export default function TaskList() {
       <CreateModal
         open={showCreate}
         onClose={() => setShowCreate(false)}
-        onCreated={() => { setShowCreate(false); load(); }}
-        sprintOptions={sprintOptions}
+        organizationId={organization?._id}
+        onCreated={(id) => navigate(`/tasks/${id}`)}
       />
     </div>
   );
 }
 
-function CreateModal({ open, onClose, onCreated, sprintOptions }) {
-  const { organization } = useStore();
-  const [form, setForm] = useState({ title: "", description: "", status: "todo", priority: "medium", entity: "", sprint: "", due_at: "" });
+function CreateModal({ open, onClose, organizationId, onCreated }) {
+  const [title, setTitle] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) setTitle("");
+  }, [open]);
 
   async function save(e) {
     e.preventDefault();
+    const t = title.trim();
+    if (!t || saving) return;
     setSaving(true);
-    try {
-      const payload = { ...form, organization_id: organization?._id };
-      if (!payload.due_at) delete payload.due_at;
-      if (!payload.entity) delete payload.entity;
-      if (!payload.sprint) delete payload.sprint;
-      const r = await API.post("/task", payload);
-      if (r.ok) {
-        toast.success("Task created");
-        setForm({ title: "", description: "", status: "todo", priority: "medium", entity: "", sprint: "", due_at: "" });
-        onCreated?.();
-      } else {
-        toast.error(r.message || "Create failed");
-      }
-    } finally {
-      setSaving(false);
-    }
+    const r = await API.post("/task", { title: t, organization_id: organizationId, sprint: currentSprint() });
+    setSaving(false);
+    if (r.ok) onCreated?.(r.data._id);
+    else toast.error(r.message || "Create failed");
   }
 
   return (
     <Modal open={open} onClose={onClose} title="New task">
       <form onSubmit={save} className="space-y-3">
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Title</span>
-          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required autoFocus className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Description</span>
-          <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-        </label>
-        <div className="grid grid-cols-3 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Status</span>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-              {STATUSES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Priority</span>
-            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Due</span>
-            <input type="date" value={form.due_at} onChange={(e) => setForm({ ...form, due_at: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Entity</span>
-            <select value={form.entity} onChange={(e) => setForm({ ...form, entity: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm">
-              <option value="">—</option>
-              {ENTITIES.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
-            </select>
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-sm font-medium text-slate-700">Sprint</span>
-            <input value={form.sprint} onChange={(e) => setForm({ ...form, sprint: e.target.value })} list="create-sprint-options" placeholder="Sprint 20, Backlog…" className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-            <datalist id="create-sprint-options">
-              {sprintOptions?.map((s) => <option key={s} value={s} />)}
-            </datalist>
-          </label>
-        </div>
-        <div className="flex justify-end gap-2 pt-2">
+        <input
+          autoFocus
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Task title…"
+          className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+        />
+        <p className="text-xs text-slate-500">Will be added to sprint <span className="font-mono">{currentSprint()}</span>. Edit the rest on the next page.</p>
+        <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Cancel</button>
-          <button disabled={saving} className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
+          <button disabled={saving || !title.trim()} className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60">
             {saving ? "Creating…" : "Create"}
           </button>
         </div>

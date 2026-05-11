@@ -9,15 +9,16 @@ const STATUSES = ["todo", "doing", "waiting", "done"];
 function registerTaskTools(server) {
   server.tool(
     "search_tasks",
-    "Search tasks in the caller's workspace. Filters by text, status, assignee, priority, entity, sprint, reference. Returns id, reference, title, status, priority, entity, sprint, due_at, assignee, comment_count, created_at.",
+    "Search tasks in the caller's workspace. Filters: search (text on title/description), status, assignee_id, priority, entity, sprint, reference, external_id. Returns: id, reference, title, status, priority, entity, sprint, due_at, assignee_id, comment_count, created_at. Examples: {status:'doing', entity:'selego'} → in-progress on Selego. {sprint:'Sprint 20', priority:'high'} → high-priority of Sprint 20.",
     {
       search: z.string().optional().describe("Text search on title or description"),
       status: z.enum(STATUSES).optional(),
-      assigneeId: z.string().optional(),
+      assignee_id: z.string().optional(),
       priority: z.enum(["low", "medium", "high"]).optional(),
       entity: z.enum(ENTITIES).optional(),
-      sprint: z.string().optional().describe("Exact match, e.g. 'Sprint 20' or 'Backlog'"),
+      sprint: z.string().optional().describe("Exact match. Use ISO week format like '2026-W19' (current sprint) or 'Backlog'. Call get_current_sprint or list_sprints to discover valid names."),
       reference: z.string().optional().describe("Exact reference match, e.g. 'TASK-12'"),
+      external_id: z.string().optional().describe("Exact external_id match (e.g. 'notion:abc123')"),
       limit: z.number().min(1).max(200).default(50).optional(),
       offset: z.number().min(0).default(0).optional(),
       sort: z.string().default("-created_at").optional(),
@@ -31,11 +32,12 @@ function registerTaskTools(server) {
           query.$or = [{ title: re }, { description: re }];
         }
         if (params.status) query.status = params.status;
-        if (params.assigneeId) query.assignee_id = params.assigneeId;
+        if (params.assignee_id) query.assignee_id = params.assignee_id;
         if (params.priority) query.priority = params.priority;
         if (params.entity) query.entity = params.entity;
         if (params.sprint) query.sprint = params.sprint;
         if (params.reference) query.reference = params.reference;
+        if (params.external_id) query.external_id = params.external_id;
 
         const [total, items] = await Promise.all([
           Task.countDocuments(query),
@@ -55,7 +57,7 @@ function registerTaskTools(server) {
 
   server.tool(
     "get_task",
-    "Get a single task by ID, with its comments. Returned task includes reference, entity, sprint.",
+    "Get a single task by ID with its comments. Returns the full task (reference, entity, sprint, external_id, ...) plus an array of comments. Example: {id:'67abc...'}.",
     { id: z.string().describe("MongoDB ObjectId of the task") },
     async (params, extra) => {
       try {
@@ -72,21 +74,36 @@ function registerTaskTools(server) {
 
   server.tool(
     "create_task",
-    "Create a task in the caller's workspace. A human-readable reference (e.g. TASK-12) is assigned automatically and returned on the task.",
+    "Create a task in the caller's workspace. A human-readable reference (e.g. TASK-12) is assigned automatically. Sprint convention: ISO week names like '2026-W19' (Monday → Sunday) or 'Backlog'. When external_id is provided, behaves as find-or-create: if a task with that external_id already exists in the workspace, the existing task is returned with created:false (no duplicate, no update). Use external_id to make migrations idempotent and rerunnable. All params are snake_case. Example: {title:'Fix login bug', entity:'selego', sprint:'2026-W19', priority:'high', external_id:'notion:abc123'}.",
     {
       title: z.string().describe("Required"),
       description: z.string().optional(),
       status: z.enum(STATUSES).default("todo").optional(),
       priority: z.enum(["low", "medium", "high"]).default("medium").optional(),
-      assigneeId: z.string().optional(),
-      assigneeName: z.string().optional(),
+      assignee_id: z.string().optional(),
+      assignee_name: z.string().optional(),
       entity: z.enum(ENTITIES).optional().describe("walego, selego, jobego, tirana, tochet, or admin"),
-      sprint: z.string().optional().describe("Free string, e.g. 'Sprint 20' or 'Backlog'"),
-      dueAt: z.string().optional().describe("ISO date string"),
+      sprint: z.string().optional().describe("Sprint name as ISO week (e.g. '2026-W19') or 'Backlog'. Call get_current_sprint to get the current week."),
+      due_at: z.string().optional().describe("ISO date string"),
+      external_id: z
+        .string()
+        .optional()
+        .describe("Stable id from an external source (e.g. 'notion:abc123'). Makes create_task idempotent."),
     },
     async (params, extra) => {
       try {
         const { user, organizationId } = await resolveCaller(extra);
+
+        if (params.external_id) {
+          const existing = await Task.findOne({
+            organization_id: organizationId,
+            external_id: params.external_id,
+          }).lean();
+          if (existing) {
+            return formatResult({ created: false, task: { ...existing, url: taskUrl(existing._id) } });
+          }
+        }
+
         const payload = {
           title: params.title,
           description: params.description || "",
@@ -95,11 +112,13 @@ function registerTaskTools(server) {
           organization_id: organizationId,
           created_by: user._id.toString(),
         };
-        if (params.assigneeId) payload.assignee_id = params.assigneeId;
-        if (params.assigneeName) payload.assignee_name = params.assigneeName;
+        if (params.assignee_id) payload.assignee_id = params.assignee_id;
+        if (params.assignee_name) payload.assignee_name = params.assignee_name;
         if (params.entity) payload.entity = params.entity;
         if (params.sprint) payload.sprint = params.sprint;
-        if (params.dueAt) payload.due_at = new Date(params.dueAt);
+        if (params.due_at) payload.due_at = new Date(params.due_at);
+        if (params.external_id) payload.external_id = params.external_id;
+
         const task = await Task.create(payload);
         return formatResult({ created: true, task: { ...task.toObject(), url: taskUrl(task._id) } });
       } catch (err) {
@@ -110,29 +129,30 @@ function registerTaskTools(server) {
 
   server.tool(
     "update_task",
-    "Update task fields. The reference is immutable and cannot be changed.",
+    "Update task fields by ID. All fields are flat snake_case (no fields:{} wrapper). The reference and external_id are immutable. At least one updatable field must be provided. Example: {id:'67abc...', status:'done', sprint:'Backlog'}.",
     {
       id: z.string(),
-      fields: z
-        .object({
-          title: z.string().optional(),
-          description: z.string().optional(),
-          status: z.enum(STATUSES).optional(),
-          priority: z.enum(["low", "medium", "high"]).optional(),
-          assignee_id: z.string().optional(),
-          assignee_name: z.string().optional(),
-          entity: z.enum(ENTITIES).optional(),
-          sprint: z.string().nullable().optional(),
-          due_at: z.string().nullable().optional(),
-        })
-        .describe("Fields to update (snake_case)"),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      status: z.enum(STATUSES).optional(),
+      priority: z.enum(["low", "medium", "high"]).optional(),
+      assignee_id: z.string().nullable().optional(),
+      assignee_name: z.string().nullable().optional(),
+      entity: z.enum(ENTITIES).optional(),
+      sprint: z.string().nullable().optional(),
+      due_at: z.string().nullable().optional(),
     },
     async (params, extra) => {
       try {
         await resolveCaller(extra);
-        const update = { ...params.fields };
+        const { id, ...rest } = params;
+        const update = {};
+        for (const [key, value] of Object.entries(rest)) {
+          if (value !== undefined) update[key] = value;
+        }
+        if (Object.keys(update).length === 0) return formatError("No fields provided to update");
         if (update.due_at) update.due_at = new Date(update.due_at);
-        const task = await Task.findByIdAndUpdate(params.id, { $set: update }, { new: true }).lean();
+        const task = await Task.findByIdAndUpdate(id, { $set: update }, { new: true }).lean();
         if (!task) return formatError("Task not found");
         return formatResult({ updated: true, task: { ...task, url: taskUrl(task._id) } });
       } catch (err) {
@@ -143,7 +163,7 @@ function registerTaskTools(server) {
 
   server.tool(
     "delete_task",
-    "Delete a task and all its comments.",
+    "Delete a task and all its comments. Irreversible.",
     { id: z.string() },
     async (params, extra) => {
       try {
@@ -160,22 +180,22 @@ function registerTaskTools(server) {
 
   server.tool(
     "add_comment_to_task",
-    "Add a comment to a task (author is the authenticated user).",
+    "Add a comment to a task. Author is the authenticated user. Example: {task_id:'67abc...', content:'Blocked on review'}.",
     {
-      taskId: z.string(),
+      task_id: z.string(),
       content: z.string().min(1),
     },
     async (params, extra) => {
       try {
         const { user, organizationId } = await resolveCaller(extra);
         const comment = await Comment.create({
-          task_id: params.taskId,
+          task_id: params.task_id,
           organization_id: organizationId,
           author_id: user._id.toString(),
           author_name: `${user.firstname || ""} ${user.lastname || ""}`.trim() || user.email,
           content: params.content,
         });
-        await Task.findByIdAndUpdate(params.taskId, { $inc: { comment_count: 1 } });
+        await Task.findByIdAndUpdate(params.task_id, { $inc: { comment_count: 1 } });
         return formatResult({ created: true, comment });
       } catch (err) {
         return formatError(err.message);

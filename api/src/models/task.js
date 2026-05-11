@@ -15,6 +15,7 @@ const TaskSchema = new mongoose.Schema(
     entity: { type: String, enum: ENTITIES, index: true },
     sprint: { type: String, index: true },
     reference: { type: String, required: true, index: true },
+    external_id: { type: String, index: true },
     due_at: { type: Date },
     created_by: { type: String },
     comment_count: { type: Number, default: 0 },
@@ -23,6 +24,10 @@ const TaskSchema = new mongoose.Schema(
 );
 
 TaskSchema.index({ organization_id: 1, reference: 1 }, { unique: true });
+TaskSchema.index(
+  { organization_id: 1, external_id: 1 },
+  { unique: true, partialFilterExpression: { external_id: { $type: "string" } } },
+);
 
 TaskSchema.pre("validate", async function () {
   if (this.isNew && !this.reference && this.organization_id) {

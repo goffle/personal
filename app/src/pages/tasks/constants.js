@@ -11,7 +11,7 @@ export const ENTITIES = [
   { value: "jobego", label: "Jobego" },
   { value: "tirana", label: "Tirana" },
   { value: "tochet", label: "Tochet" },
-  { value: "admin", label: "Admin (perso)" },
+  { value: "admin", label: "Admin" },
 ];
 
 export const statusMeta = (value) => STATUSES.find((s) => s.value === value) || STATUSES[0];

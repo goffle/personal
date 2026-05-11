@@ -7,8 +7,10 @@ import API from "@/services/api";
 import useStore from "@/services/store";
 import Loader from "@/components/loader";
 import { STATUSES, ENTITIES } from "./constants";
+import { sprintOptions, sprintLabel } from "./sprints";
 
 const PRIORITIES = ["low", "medium", "high"];
+const SPRINT_OPTIONS = sprintOptions();
 
 export default function TaskDetail() {
   const { id } = useParams();
@@ -119,16 +121,17 @@ export default function TaskDetail() {
             onChange={(v) => patch("entity", v || null)}
             saving={savingField === "entity"}
           />
-          <label className="flex items-center gap-2">
-            <span className="text-xs uppercase tracking-wide text-slate-500">Sprint</span>
-            <input
-              value={task.sprint || ""}
-              onChange={(e) => setTask({ ...task, sprint: e.target.value })}
-              onBlur={(e) => patch("sprint", e.target.value || null)}
-              placeholder="Backlog…"
-              className="rounded-md border border-slate-300 px-2 py-1 text-sm"
-            />
-          </label>
+          <FieldSelect
+            label="Sprint"
+            value={task.sprint || ""}
+            options={[
+              { value: "", label: "—" },
+              ...SPRINT_OPTIONS.map((s) => ({ value: s, label: sprintLabel(s) })),
+              ...(task.sprint && !SPRINT_OPTIONS.includes(task.sprint) ? [{ value: task.sprint, label: task.sprint }] : []),
+            ]}
+            onChange={(v) => patch("sprint", v || null)}
+            saving={savingField === "sprint"}
+          />
           <label className="flex items-center gap-2">
             <span className="text-xs uppercase tracking-wide text-slate-500">Due</span>
             <input
