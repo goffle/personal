@@ -3,7 +3,7 @@ const Task = require("../../models/task");
 const Comment = require("../../models/comment");
 const { sanitizeSearch, formatResult, formatError, resolveCaller, taskUrl } = require("./_shared");
 
-const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin"];
+const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
 const STATUSES = ["todo", "doing", "waiting", "done"];
 
 function registerTaskTools(server) {
@@ -85,7 +85,7 @@ function registerTaskTools(server) {
       assignee_id: z.string().optional().describe("Defaults to the calling user if omitted"),
       assignee_name: z.string().optional(),
       assignee_type: z.enum(["user", "agent"]).optional().describe("'user' or 'agent'. Defaults to 'user' when assignee_id is omitted."),
-      entity: z.enum(ENTITIES).optional().describe("walego, selego, jobego, tirana, tochet, or admin"),
+      entity: z.enum(ENTITIES).optional().describe("walego, selego, jobego, tirana, tochet, admin, or other"),
       sprint: z.string().optional().describe("Sprint name as ISO week (e.g. '2026-W19') or 'Backlog'. Call get_current_sprint to get the current week."),
       due_at: z.string().optional().describe("ISO date string"),
       external_id: z

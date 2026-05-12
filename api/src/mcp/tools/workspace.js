@@ -2,7 +2,7 @@ const { z } = require("zod");
 const Task = require("../../models/task");
 const { formatResult, formatError, resolveCaller } = require("./_shared");
 
-const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin"];
+const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
 
 // --- ISO 8601 week helpers (Monday → Sunday) ---
 

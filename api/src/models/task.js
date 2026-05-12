@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin"];
+const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
 const STATUSES = ["todo", "doing", "waiting", "done"];
 
 const TaskSchema = new mongoose.Schema(
