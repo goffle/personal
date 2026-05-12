@@ -7,4 +7,9 @@ module.exports = {
   APP_URL: isProd ? "https://app.jeeve.me" : "http://localhost:3000",
   API_URL: isProd ? "https://api.jeeve.me" : "http://localhost:8080",
   ENVIRONMENT: isProd ? "production" : "development",
+
+  APP_SECRET: process.env.APP_SECRET || "dev-only-app-secret-rotate-in-prod",
+
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
 };

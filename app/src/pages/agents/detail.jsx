@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RiAddLine, RiArrowLeftLine, RiDeleteBin6Line, RiFileTextLine } from "react-icons/ri";
+import { RiAddLine, RiArrowLeftLine, RiDeleteBin6Line, RiFileTextLine, RiPlugLine } from "react-icons/ri";
 
 import API from "@/services/api";
+import useStore from "@/services/store";
 import Loader from "@/components/loader";
 
 const TABS = [
   { value: "config", label: "Configuration" },
+  { value: "connectors", label: "Connectors" },
   { value: "files", label: "Files" },
 ];
 
@@ -78,6 +80,9 @@ export default function AgentDetail() {
       {tab === "config" && (
         <ConfigTab agent={agent} setAgent={setAgent} patch={patch} savingField={savingField} />
       )}
+      {tab === "connectors" && (
+        <ConnectorsTab agent={agent} patch={patch} />
+      )}
       {tab === "files" && (
         <FilesTab agent={agent} patch={patch} />
       )}
@@ -108,6 +113,74 @@ function ConfigTab({ agent, setAgent, patch }) {
           className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </label>
+    </div>
+  );
+}
+
+function ConnectorsTab({ agent, patch }) {
+  const { organization } = useStore();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const linked = agent.connectors || [];
+
+  async function load() {
+    setLoading(true);
+    const r = await API.post("/connector/search", { organization_id: organization?._id, limit: 200 });
+    if (r.ok) setItems(r.data);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [organization?._id]);
+
+  async function toggle(c) {
+    const isLinked = linked.some((x) => x.id === c._id);
+    const next = isLinked
+      ? linked.filter((x) => x.id !== c._id)
+      : [...linked, { id: c._id, name: c.name }];
+    await patch({ connectors: next });
+  }
+
+  const statusColor = {
+    connected: "bg-emerald-500",
+    disconnected: "bg-slate-300",
+    error: "bg-red-500",
+  };
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Available connectors</span>
+        <span className="text-xs text-slate-500">{linked.length} linked</span>
+      </div>
+      {loading ? (
+        <div className="flex justify-center py-8"><Loader /></div>
+      ) : items.length === 0 ? (
+        <div className="px-4 py-8 text-center text-sm text-slate-500">No connectors in this org yet.</div>
+      ) : (
+        <ul>
+          {items.map((c) => {
+            const isLinked = linked.some((x) => x.id === c._id);
+            return (
+              <li key={c._id} className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 first:border-t-0">
+                <label className="flex flex-1 cursor-pointer items-center gap-3">
+                  <input type="checkbox" checked={isLinked} onChange={() => toggle(c)} className="h-4 w-4 rounded border-slate-300" />
+                  <RiPlugLine className="h-4 w-4 text-slate-400" />
+                  <div className="flex flex-1 items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">{c.name}</div>
+                      <div className="text-xs text-slate-500">{c.kind || "—"}</div>
+                    </div>
+                    <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <span className={`h-1.5 w-1.5 rounded-full ${statusColor[c.status] || "bg-slate-300"}`} />
+                      {c.status || "unknown"}
+                    </span>
+                  </div>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
