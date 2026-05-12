@@ -92,11 +92,30 @@ async function runAgentTurn({ chat, agent, ctx, onDelta, onAssistant, onToolEven
         output = { error: err.message };
         isError = true;
       }
-      onToolEvent?.({ tool: use.name, status: "end", output, error: isError });
+
+      // Tools can opt into rich tool_result content (e.g. mixed image+text blocks)
+      // by returning an object with `_content: [...]`. Otherwise we stringify.
+      let toolResultContent;
+      if (output && typeof output === "object" && Array.isArray(output._content)) {
+        toolResultContent = output._content;
+      } else if (typeof output === "string") {
+        toolResultContent = output;
+      } else {
+        toolResultContent = JSON.stringify(output);
+      }
+
+      // Don't blast huge base64 payloads back to the chat UI via SSE — replace _content
+      // with a tiny summary for display only. The model still sees the full blocks.
+      const displayOutput =
+        output && typeof output === "object" && Array.isArray(output._content)
+          ? { ...output, _content: `[${output._content.length} blocks: ${output._content.map((b) => b.type).join(", ")}]` }
+          : output;
+      onToolEvent?.({ tool: use.name, status: "end", output: displayOutput, error: isError });
+
       toolResultBlocks.push({
         type: "tool_result",
         tool_use_id: use.id,
-        content: typeof output === "string" ? output : JSON.stringify(output),
+        content: toolResultContent,
         ...(isError ? { is_error: true } : {}),
       });
     }

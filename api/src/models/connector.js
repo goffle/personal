@@ -1,8 +1,8 @@
 const mongoose = require("mongoose");
 const { encrypt } = require("../utils/crypto");
 
-const SENSITIVE_KEYS = ["refresh_token", "access_token", "client_secret", "api_key"];
-const AUTO_ENCRYPT_KEYS = ["api_key"];
+const SENSITIVE_KEYS = ["refresh_token", "access_token", "client_secret", "api_key", "storage_state"];
+const AUTO_ENCRYPT_KEYS = ["api_key", "storage_state"];
 
 const ConnectorSchema = new mongoose.Schema(
   {
