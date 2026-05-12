@@ -5,6 +5,7 @@ const SkillSchema = new mongoose.Schema(
     name: { type: String, required: true },
     description: { type: String, default: "" },
     body_md: { type: String, default: "" },
+    agent_id: { type: String, index: true },
     organization_id: { type: String, index: true },
     created_by: { type: String },
   },

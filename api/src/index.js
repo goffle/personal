@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -56,4 +58,7 @@ app.use("/tool", require("./controllers/tool"));
 app.get("/", (_req, res) => res.status(200).send("Console API · " + new Date().toLocaleString()));
 
 const server = http.createServer(app);
-server.listen(PORT, () => console.log("Listening on port " + PORT));
+server.listen(PORT, () => {
+  console.log("Listening on port " + PORT);
+  require("./services/scheduler").init().catch((err) => console.error("Scheduler init failed:", err.message));
+});

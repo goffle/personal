@@ -14,6 +14,9 @@ const NOT_FOUND = "NOT_FOUND";
  * @param {object}   opts.defaultSort     mongoose sort spec (default: { created_at: -1 })
  * @param {function} opts.beforeCreate    (req) => extraFields to merge into the new doc
  * @param {function} opts.scopeQuery      (req, query) => mutate query for additional scoping
+ * @param {function} opts.afterCreate     (doc, req) => void | Promise; fires after a successful create
+ * @param {function} opts.afterUpdate     (doc, req) => void | Promise; fires after a successful update
+ * @param {function} opts.afterDelete     (id, req) => void | Promise; fires after a successful delete
  */
 function buildCrud(Model, opts = {}) {
   const router = express.Router();
@@ -25,6 +28,9 @@ function buildCrud(Model, opts = {}) {
     defaultSort = { created_at: -1 },
     beforeCreate = null,
     scopeQuery = null,
+    afterCreate = null,
+    afterUpdate = null,
+    afterDelete = null,
   } = opts;
 
   router.post("/search", auth, async (req, res) => {
@@ -68,6 +74,7 @@ function buildCrud(Model, opts = {}) {
       payload.created_by = req.user._id.toString();
       if (beforeCreate) Object.assign(payload, await beforeCreate(req));
       const data = await Model.create(payload);
+      if (afterCreate) await afterCreate(data, req);
       return res.status(200).send({ ok: true, data });
     } catch (err) {
       console.error(err);
@@ -79,6 +86,7 @@ function buildCrud(Model, opts = {}) {
     try {
       const data = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true });
       if (!data) return res.status(404).send({ ok: false, code: NOT_FOUND });
+      if (afterUpdate) await afterUpdate(data, req);
       return res.status(200).send({ ok: true, data });
     } catch (err) {
       return res.status(500).send({ ok: false, code: SERVER_ERROR });
@@ -89,6 +97,7 @@ function buildCrud(Model, opts = {}) {
     try {
       const data = await Model.findByIdAndDelete(req.params.id);
       if (!data) return res.status(404).send({ ok: false, code: NOT_FOUND });
+      if (afterDelete) await afterDelete(req.params.id, req);
       return res.status(200).send({ ok: true });
     } catch (err) {
       return res.status(500).send({ ok: false, code: SERVER_ERROR });

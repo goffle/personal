@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RiAddLine, RiArrowLeftLine, RiDeleteBin6Line, RiFileTextLine, RiPlugLine } from "react-icons/ri";
+import { RiAddLine, RiArrowLeftLine, RiDeleteBin6Line, RiFileTextLine, RiPlayLine, RiPlugLine, RiToolsLine } from "react-icons/ri";
 
 import API from "@/services/api";
 import useStore from "@/services/store";
@@ -10,6 +10,8 @@ import Loader from "@/components/loader";
 const TABS = [
   { value: "config", label: "Configuration" },
   { value: "connectors", label: "Connectors" },
+  { value: "skills", label: "Skills" },
+  { value: "schedules", label: "Schedules" },
   { value: "files", label: "Files" },
 ];
 
@@ -49,7 +51,7 @@ export default function AgentDetail() {
   if (!agent) return <div className="p-6 text-slate-500">Agent not found.</div>;
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
+    <div className="mx-auto max-w-6xl p-6">
       <div className="mb-4 flex items-center justify-between">
         <Link to="/agents" className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
           <RiArrowLeftLine className="h-4 w-4" /> Back to agents
@@ -82,6 +84,12 @@ export default function AgentDetail() {
       )}
       {tab === "connectors" && (
         <ConnectorsTab agent={agent} patch={patch} />
+      )}
+      {tab === "skills" && (
+        <SkillsTab agent={agent} />
+      )}
+      {tab === "schedules" && (
+        <SchedulesTab agent={agent} />
       )}
       {tab === "files" && (
         <FilesTab agent={agent} patch={patch} />
@@ -286,6 +294,375 @@ function FilesTab({ agent, patch }) {
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function SkillsTab({ agent }) {
+  const { organization } = useStore();
+  const [skills, setSkills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const selected = skills.find((s) => s._id === selectedId);
+
+  async function load() {
+    setLoading(true);
+    const r = await API.post("/skill/search", { organization_id: organization?._id, agent_id: agent._id, limit: 200 });
+    if (r.ok) {
+      setSkills(r.data);
+      if (!selectedId && r.data[0]) setSelectedId(r.data[0]._id);
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [agent._id]);
+
+  useEffect(() => {
+    setDraft(selected ? { name: selected.name, description: selected.description || "", body_md: selected.body_md || "" } : null);
+  }, [selectedId, selected?.name, selected?.description, selected?.body_md]);
+
+  async function addSkill() {
+    const name = prompt("Skill name (e.g. morning-brief):");
+    if (!name) return;
+    const r = await API.post("/skill", { name, organization_id: organization?._id, agent_id: agent._id });
+    if (r.ok) {
+      await load();
+      setSelectedId(r.data._id);
+    } else {
+      toast.error("Could not create skill");
+    }
+  }
+
+  async function saveSkill() {
+    if (!selected || !draft) return;
+    const r = await API.put(`/skill/${selected._id}`, draft);
+    if (r.ok) {
+      setSkills((prev) => prev.map((s) => (s._id === selected._id ? r.data : s)));
+      toast.success("Saved");
+    } else {
+      toast.error("Save failed");
+    }
+  }
+
+  async function removeSkill(skill) {
+    if (!confirm(`Delete "${skill.name}"?`)) return;
+    const r = await API.remove(`/skill/${skill._id}`);
+    if (r.ok) {
+      const next = skills.filter((s) => s._id !== skill._id);
+      setSkills(next);
+      if (selectedId === skill._id) setSelectedId(next[0]?._id || null);
+    }
+  }
+
+  return (
+    <div className="grid grid-cols-[220px_1fr] gap-4">
+      <aside className="rounded-lg border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Skills</span>
+          <button onClick={addSkill} className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-900" title="Add skill">
+            <RiAddLine className="h-4 w-4" />
+          </button>
+        </div>
+        {loading ? (
+          <div className="flex justify-center py-6"><Loader /></div>
+        ) : skills.length === 0 ? (
+          <div className="px-3 py-3 text-xs text-slate-500">No skills yet.</div>
+        ) : (
+          <ul>
+            {skills.map((s) => (
+              <li
+                key={s._id}
+                onClick={() => setSelectedId(s._id)}
+                className={`group flex cursor-pointer items-center justify-between px-3 py-2 text-sm hover:bg-slate-50 ${
+                  selectedId === s._id ? "bg-slate-100 text-slate-900" : "text-slate-700"
+                }`}
+              >
+                <span className="flex items-center gap-2 truncate">
+                  <RiToolsLine className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="truncate">{s.name}</span>
+                </span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeSkill(s); }}
+                  className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-slate-400 hover:text-red-600"
+                  title="Delete skill"
+                >
+                  <RiDeleteBin6Line className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        {!selected || !draft ? (
+          <div className="flex h-full min-h-[200px] items-center justify-center text-sm text-slate-500">
+            Select or add a skill to edit.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Name</span>
+              <input
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Description</span>
+              <input
+                value={draft.description}
+                onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                placeholder="When and how to use this skill…"
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Body (Markdown)</span>
+              <textarea
+                value={draft.body_md}
+                onChange={(e) => setDraft({ ...draft, body_md: e.target.value })}
+                rows={16}
+                placeholder="The instructions sent to the agent when this skill runs…"
+                className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-sm outline-none focus:bg-white"
+              />
+            </label>
+            <div className="flex justify-end">
+              <button onClick={saveSkill} className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function SchedulesTab({ agent }) {
+  const { organization } = useStore();
+  const [crons, setCrons] = useState([]);
+  const [skills, setSkills] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    const [cronRes, skillRes] = await Promise.all([
+      API.post("/cron-job/search", { organization_id: organization?._id, agent_id: agent._id, limit: 200 }),
+      API.post("/skill/search", { organization_id: organization?._id, agent_id: agent._id, limit: 200 }),
+    ]);
+    if (cronRes.ok) setCrons(cronRes.data);
+    if (skillRes.ok) setSkills(skillRes.data);
+    setLoading(false);
+  }
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [agent._id]);
+
+  async function toggleEnabled(cron) {
+    const r = await API.put(`/cron-job/${cron._id}`, { enabled: !cron.enabled });
+    if (r.ok) setCrons((prev) => prev.map((c) => (c._id === cron._id ? r.data : c)));
+  }
+
+  async function remove(cron) {
+    if (!confirm(`Delete schedule "${cron.name}"?`)) return;
+    const r = await API.remove(`/cron-job/${cron._id}`);
+    if (r.ok) setCrons((prev) => prev.filter((c) => c._id !== cron._id));
+  }
+
+  async function runNow(cron) {
+    const r = await API.post(`/cron-job/${cron._id}/run`);
+    if (r.ok) {
+      toast.success("Run triggered");
+      load();
+    } else {
+      toast.error(r.message || "Run failed");
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          {crons.length} schedule{crons.length === 1 ? "" : "s"}
+        </span>
+        <button
+          onClick={() => setShowCreate(true)}
+          disabled={skills.length === 0}
+          className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+          title={skills.length === 0 ? "Create a skill first" : "New schedule"}
+        >
+          <RiAddLine className="h-4 w-4" /> New schedule
+        </button>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader /></div>
+        ) : crons.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-slate-500">
+            {skills.length === 0
+              ? "Create a skill first, then schedule it here."
+              : "No schedules yet. Click \"New schedule\" to add one."}
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-2.5">Name</th>
+                <th className="px-4 py-2.5">Schedule</th>
+                <th className="px-4 py-2.5">Skill</th>
+                <th className="px-4 py-2.5">Last run</th>
+                <th className="px-4 py-2.5">Status</th>
+                <th className="px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {crons.map((c) => (
+                <tr key={c._id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3 font-medium text-slate-900">{c.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-slate-700">{c.schedule}</td>
+                  <td className="px-4 py-3 text-slate-700">{c.skill_name || "—"}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">
+                    {c.last_run_at ? new Date(c.last_run_at).toLocaleString() : "—"}
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => toggleEnabled(c)}
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        c.enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {c.enabled ? "enabled" : "paused"}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => runNow(c)}
+                        className="rounded p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                        title="Run now"
+                      >
+                        <RiPlayLine className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => remove(c)}
+                        className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        title="Delete"
+                      >
+                        <RiDeleteBin6Line className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <CreateScheduleModal
+        open={showCreate}
+        onClose={() => setShowCreate(false)}
+        onCreated={() => { setShowCreate(false); load(); }}
+        agent={agent}
+        skills={skills}
+      />
+    </div>
+  );
+}
+
+function CreateScheduleModal({ open, onClose, onCreated, agent, skills }) {
+  const { organization } = useStore();
+  const [form, setForm] = useState({ name: "", schedule: "0 8 * * *", skill_id: "" });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open && !form.skill_id && skills[0]) setForm((f) => ({ ...f, skill_id: skills[0]._id }));
+  }, [open, skills, form.skill_id]);
+
+  if (!open) return null;
+
+  async function save(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const skill = skills.find((s) => s._id === form.skill_id);
+      const r = await API.post("/cron-job", {
+        name: form.name,
+        schedule: form.schedule,
+        skill_id: form.skill_id,
+        skill_name: skill?.name || "",
+        agent_id: agent._id,
+        organization_id: organization?._id,
+        enabled: true,
+      });
+      if (r.ok) {
+        toast.success("Scheduled");
+        setForm({ name: "", schedule: "0 8 * * *", skill_id: skills[0]?._id || "" });
+        onCreated?.();
+      } else {
+        toast.error(r.message || "Create failed");
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+        <h3 className="mb-3 text-base font-semibold text-slate-900">New schedule</h3>
+        <form onSubmit={save} className="space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Name</span>
+            <input
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Morning brief"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Schedule (cron)</span>
+            <input
+              required
+              value={form.schedule}
+              onChange={(e) => setForm({ ...form, schedule: e.target.value })}
+              placeholder="0 8 * * *"
+              className="w-full rounded-md border border-slate-300 px-3 py-2 font-mono text-sm"
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              Standard 5-field cron. Default <code>0 8 * * *</code> = every day at 08:00.
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Skill</span>
+            <select
+              required
+              value={form.skill_id}
+              onChange={(e) => setForm({ ...form, skill_id: e.target.value })}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
+              {skills.map((s) => (
+                <option key={s._id} value={s._id}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" onClick={onClose} className="rounded-md border border-slate-300 px-3 py-2 text-sm">Cancel</button>
+            <button
+              disabled={saving || !form.skill_id}
+              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {saving ? "Creating…" : "Create"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
