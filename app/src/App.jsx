@@ -17,6 +17,7 @@ import Cron from "@/pages/cron";
 import Skills from "@/pages/skills";
 import Connectors from "@/pages/connectors";
 import Mcp from "@/pages/mcp";
+import Usages from "@/pages/usages";
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/skills/*" element={<Skills />} />
             <Route path="/connectors/*" element={<Connectors />} />
             <Route path="/mcp/*" element={<Mcp />} />
+            <Route path="/usages" element={<Usages />} />
           </Route>
         </Route>
 
@@ -69,8 +71,9 @@ function RequireAuth() {
           if (r.token) API.setToken(r.token);
           setUser(r.user);
           const stored = useStore.getState().organization;
-          const stillValid = stored && r.organisations?.find((o) => o._id === (stored._id || stored.id));
-          setOrganization(stillValid ? stored : r.organisations?.[0] || null);
+          const fresh = stored && r.organisations?.find((o) => o._id === (stored._id || stored.id));
+          // Always prefer the server-side copy so fields like cost_usd stay current.
+          setOrganization(fresh || r.organisations?.[0] || null);
         }
       } catch (_e) {
         /* ignore */

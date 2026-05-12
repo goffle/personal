@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RiLogoutBoxRLine } from "react-icons/ri";
+import { RiLogoutBoxRLine, RiCoinLine } from "react-icons/ri";
 
 import useStore from "@/services/store";
 import API from "@/services/api";
 
 function initial(user) {
   return (user?.firstname?.[0] || user?.email?.[0] || "?").toUpperCase();
+}
+
+function formatCost(usd) {
+  if (typeof usd !== "number" || Number.isNaN(usd)) return "$0.00";
+  if (usd >= 0.01) return `$${usd.toFixed(2)}`;
+  return `$${usd.toFixed(4)}`;
 }
 
 export default function Header() {
@@ -40,7 +46,13 @@ export default function Header() {
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-end border-b border-slate-200 bg-white px-4">
+    <header className="flex h-12 shrink-0 items-center justify-end gap-3 border-b border-slate-200 bg-white px-4">
+      <span
+        className="rounded-md bg-slate-100 px-2 py-1 text-xs font-mono tabular-nums text-slate-600"
+        title="Cumulative Anthropic API spend for this organization"
+      >
+        {formatCost(organization?.cost_usd)}
+      </span>
       <div className="relative" ref={rootRef}>
         <button
           onClick={() => setOpen((v) => !v)}
@@ -64,8 +76,15 @@ export default function Header() {
             </div>
             <div className="border-t border-slate-100">
               <button
-                onClick={logout}
+                onClick={() => { setOpen(false); navigate("/usages"); }}
                 className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <RiCoinLine className="h-4 w-4 text-slate-400" />
+                Usages
+              </button>
+              <button
+                onClick={logout}
+                className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
               >
                 <RiLogoutBoxRLine className="h-4 w-4 text-slate-400" />
                 Logout

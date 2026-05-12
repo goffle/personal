@@ -122,7 +122,7 @@ router.post("/:id/stream", async (req, res) => {
     let aborted = false;
     req.on("close", () => { aborted = true; });
 
-    const { assistantMessages } = await runAgentTurn({
+    const { assistantMessages, turnCostUsd, orgCostUsd } = await runAgentTurn({
       chat,
       agent,
       ctx: { organization_id: chat.organization_id, created_by: user._id.toString() },
@@ -133,7 +133,7 @@ router.post("/:id/stream", async (req, res) => {
 
     if (!aborted) {
       const last = assistantMessages[assistantMessages.length - 1];
-      send("done", { message_id: last?._id });
+      send("done", { message_id: last?._id, turn_cost_usd: turnCostUsd, org_cost_usd: orgCostUsd });
       res.end();
     }
   } catch (err) {

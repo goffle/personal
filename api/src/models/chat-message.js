@@ -8,6 +8,12 @@ const ChatMessageSchema = new mongoose.Schema(
     content: { type: String, default: "" },
     content_blocks: { type: mongoose.Schema.Types.Mixed, default: null },
     streaming: { type: Boolean, default: false },
+    model: { type: String, default: null },
+    tokens_in: { type: Number, default: 0 },
+    tokens_out: { type: Number, default: 0 },
+    tokens_cache_read: { type: Number, default: 0 },
+    tokens_cache_write: { type: Number, default: 0 },
+    cost_usd: { type: Number, default: 0 },
   },
   // minimize:false keeps empty subobjects like a tool_use's `input: {}` — Anthropic's API
   // requires the `input` field even when the tool was called with no arguments.

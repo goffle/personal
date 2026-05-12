@@ -1,8 +1,10 @@
 const ChatMessage = require("../models/chat-message");
 const Chat = require("../models/chat");
+const Organization = require("../models/organization");
 const Skill = require("../models/skill");
 const { singleTurn, extractText, extractToolUses } = require("./anthropic");
 const { buildToolsForAgent, runTool } = require("./agent-tools");
+const { computeCost } = require("./pricing");
 
 const MAX_TOOL_LOOPS = 6;
 
@@ -46,6 +48,7 @@ async function runAgentTurn({ chat, agent, ctx, onDelta, onAssistant, onToolEven
   const skillsIndex = await buildSkillsIndex(agent);
   const connectorsBlock = buildConnectorsBlock(connectors);
   const assistantMessages = [];
+  let turnCostUsd = 0;
 
   for (let loop = 0; loop < MAX_TOOL_LOOPS; loop++) {
     const history = await ChatMessage.find({ chat_id: chat._id.toString() }).sort({ created_at: 1 }).lean();
@@ -54,6 +57,8 @@ async function runAgentTurn({ chat, agent, ctx, onDelta, onAssistant, onToolEven
 
     const text = extractText(result);
     const toolUses = extractToolUses(result);
+    const { usd, tokens } = computeCost(result.model, result.usage);
+    turnCostUsd += usd;
 
     const assistantMsg = await ChatMessage.create({
       chat_id: chat._id.toString(),
@@ -62,6 +67,12 @@ async function runAgentTurn({ chat, agent, ctx, onDelta, onAssistant, onToolEven
       content: text,
       content_blocks: result.content,
       streaming: false,
+      model: result.model,
+      tokens_in: tokens.tokens_in,
+      tokens_out: tokens.tokens_out,
+      tokens_cache_read: tokens.tokens_cache_read,
+      tokens_cache_write: tokens.tokens_cache_write,
+      cost_usd: usd,
     });
     assistantMessages.push(assistantMsg);
     onAssistant?.(assistantMsg);
@@ -101,7 +112,17 @@ async function runAgentTurn({ chat, agent, ctx, onDelta, onAssistant, onToolEven
 
   await Chat.findByIdAndUpdate(chat._id, { last_message_at: new Date() });
 
-  return { assistantMessages };
+  let orgCostUsd = null;
+  if (turnCostUsd > 0 && chat.organization_id) {
+    const updated = await Organization.findByIdAndUpdate(
+      chat.organization_id,
+      { $inc: { cost_usd: turnCostUsd } },
+      { new: true, select: "cost_usd" },
+    );
+    orgCostUsd = updated?.cost_usd ?? null;
+  }
+
+  return { assistantMessages, turnCostUsd, orgCostUsd };
 }
 
 module.exports = { runAgentTurn };
