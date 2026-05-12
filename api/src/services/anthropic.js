@@ -8,14 +8,29 @@ function getClient() {
   return client;
 }
 
-function buildSystem(agent, { skillsIndex } = {}) {
+function buildTemporalContext(tz = "Europe/Paris") {
+  const now = new Date();
+  // Day-granular only — keeps the prompt-cache stable for a whole day (one cache miss/day instead of one/minute).
+  const fmt = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: tz,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "2-digit",
+  });
+  const iso = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return `Contexte temporel : aujourd'hui c'est ${fmt.format(now)} (${iso}, ${tz}). Utilise cette date comme ancre — ne devine jamais "cette semaine" / "demain" à partir de tes connaissances internes.`;
+}
+
+function buildSystem(agent, { skillsIndex, connectorsBlock } = {}) {
   const blocks = [];
+  blocks.push({ type: "text", text: buildTemporalContext() });
   if (agent.system_prompt) blocks.push({ type: "text", text: agent.system_prompt });
   for (const f of agent.files || []) {
     if (f.content_md) blocks.push({ type: "text", text: `\n# ${f.name}\n\n${f.content_md}` });
   }
+  if (connectorsBlock) blocks.push({ type: "text", text: connectorsBlock });
   if (skillsIndex) blocks.push({ type: "text", text: skillsIndex });
-  if (!blocks.length) return undefined;
   // Mark the last block ephemeral so the whole prefix is cached.
   blocks[blocks.length - 1].cache_control = { type: "ephemeral" };
   return blocks;
@@ -52,14 +67,14 @@ function extractToolUses(message) {
  *
  * @returns {Promise<Anthropic.Messages.Message>}
  */
-async function singleTurn({ agent, history, tools, onDelta, skillsIndex }) {
+async function singleTurn({ agent, history, tools, onDelta, skillsIndex, connectorsBlock }) {
   const c = getClient();
   const params = {
     model: agent.model || DEFAULT_MODEL,
     max_tokens: 8192,
     messages: historyToAnthropicMessages(history),
   };
-  const system = buildSystem(agent, { skillsIndex });
+  const system = buildSystem(agent, { skillsIndex, connectorsBlock });
   if (system) params.system = system;
   if (tools && tools.length) params.tools = tools;
 

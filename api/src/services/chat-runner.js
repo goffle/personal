@@ -13,6 +13,18 @@ async function buildSkillsIndex(agent) {
   return `Skills available — call \`read_skill(name)\` to load full instructions before executing one:\n${lines.join("\n")}`;
 }
 
+function buildConnectorsBlock(connectors) {
+  if (!connectors?.length) return "";
+  const lines = connectors.map((c) => {
+    if (!c.has_driver) {
+      return `- ${c.name} (${c.kind}) ⚠️ driver not implemented — no tools exposed for this connector`;
+    }
+    const status = c.status === "connected" ? "✓ connected" : `⚠️ ${c.status || "unknown"}`;
+    return `- ${c.name} (${c.kind}) ${status} — tools prefixed with \`${c.name}__\``;
+  });
+  return `Connectors linked to you:\n${lines.join("\n")}\n\nIf a user asks for a capability tied to a kind you don't see above (or marked "driver not implemented"), say so honestly rather than guessing.`;
+}
+
 /**
  * Run an agent turn (or sequence of tool-use loops) inside a chat. Streams
  * text via callbacks, persists every produced assistant + tool_result message.
@@ -30,14 +42,15 @@ async function buildSkillsIndex(agent) {
  * @returns {Promise<{ assistantMessages: Document[] }>}
  */
 async function runAgentTurn({ chat, agent, ctx, onDelta, onAssistant, onToolEvent }) {
-  const tools = await buildToolsForAgent(agent);
+  const { tools, connectors } = await buildToolsForAgent(agent);
   const skillsIndex = await buildSkillsIndex(agent);
+  const connectorsBlock = buildConnectorsBlock(connectors);
   const assistantMessages = [];
 
   for (let loop = 0; loop < MAX_TOOL_LOOPS; loop++) {
     const history = await ChatMessage.find({ chat_id: chat._id.toString() }).sort({ created_at: 1 }).lean();
 
-    const result = await singleTurn({ agent, history, tools, onDelta, skillsIndex });
+    const result = await singleTurn({ agent, history, tools, onDelta, skillsIndex, connectorsBlock });
 
     const text = extractText(result);
     const toolUses = extractToolUses(result);

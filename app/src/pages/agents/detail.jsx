@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RiAddLine, RiArrowLeftLine, RiDeleteBin6Line, RiFileTextLine, RiPlayLine, RiPlugLine, RiToolsLine } from "react-icons/ri";
+import { RiAddLine, RiArrowLeftLine, RiChat3Line, RiDeleteBin6Line, RiFileTextLine, RiPlayLine, RiPlugLine, RiToolsLine } from "react-icons/ri";
 
 import API from "@/services/api";
 import useStore from "@/services/store";
@@ -47,6 +47,19 @@ export default function AgentDetail() {
     if (r.ok) { toast.success("Deleted"); navigate("/agents"); }
   }
 
+  async function startChat() {
+    const r = await API.post("/chat", {
+      organization_id: agent.organization_id,
+      agent_id: agent._id,
+      title: agent.name,
+    });
+    if (r.ok) {
+      navigate("/chat");
+    } else {
+      toast.error(r.message || "Could not create chat");
+    }
+  }
+
   if (loading) return <div className="flex h-full items-center justify-center"><Loader /></div>;
   if (!agent) return <div className="p-6 text-slate-500">Agent not found.</div>;
 
@@ -56,9 +69,14 @@ export default function AgentDetail() {
         <Link to="/agents" className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
           <RiArrowLeftLine className="h-4 w-4" /> Back to agents
         </Link>
-        <button onClick={deleteAgent} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50">
-          <RiDeleteBin6Line className="h-3.5 w-3.5" /> Delete
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={startChat} className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800">
+            <RiChat3Line className="h-3.5 w-3.5" /> Chat with {agent.name}
+          </button>
+          <button onClick={deleteAgent} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50">
+            <RiDeleteBin6Line className="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
       </div>
 
       <h1 className="mb-4 text-2xl font-semibold text-slate-900">{agent.name}</h1>
@@ -128,13 +146,18 @@ function ConfigTab({ agent, setAgent, patch }) {
 function ConnectorsTab({ agent, patch }) {
   const { organization } = useStore();
   const [items, setItems] = useState([]);
+  const [driverKinds, setDriverKinds] = useState(null);
   const [loading, setLoading] = useState(true);
   const linked = agent.connectors || [];
 
   async function load() {
     setLoading(true);
-    const r = await API.post("/connector/search", { organization_id: organization?._id, limit: 200 });
-    if (r.ok) setItems(r.data);
+    const [list, drivers] = await Promise.all([
+      API.post("/connector/search", { organization_id: organization?._id, limit: 200 }),
+      API.get("/connector/drivers"),
+    ]);
+    if (list.ok) setItems(list.data);
+    if (drivers.ok) setDriverKinds(new Set(drivers.data?.kinds || []));
     setLoading(false);
   }
 
@@ -168,6 +191,7 @@ function ConnectorsTab({ agent, patch }) {
         <ul>
           {items.map((c) => {
             const isLinked = linked.some((x) => x.id === c._id);
+            const driverMissing = driverKinds && c.kind && !driverKinds.has(c.kind);
             return (
               <li key={c._id} className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 first:border-t-0">
                 <label className="flex flex-1 cursor-pointer items-center gap-3">
@@ -178,10 +202,20 @@ function ConnectorsTab({ agent, patch }) {
                       <div className="text-sm font-medium text-slate-900">{c.name}</div>
                       <div className="text-xs text-slate-500">{c.kind || "—"}</div>
                     </div>
-                    <span className="flex items-center gap-1.5 text-xs text-slate-500">
-                      <span className={`h-1.5 w-1.5 rounded-full ${statusColor[c.status] || "bg-slate-300"}`} />
-                      {c.status || "unknown"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {driverMissing && (
+                        <span
+                          className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
+                          title={`No driver registered for kind="${c.kind}" — linking this connector will expose no tools to the agent.`}
+                        >
+                          driver missing
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1.5 text-xs text-slate-500">
+                        <span className={`h-1.5 w-1.5 rounded-full ${statusColor[c.status] || "bg-slate-300"}`} />
+                        {c.status || "unknown"}
+                      </span>
+                    </div>
                   </div>
                 </label>
               </li>

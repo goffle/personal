@@ -142,6 +142,8 @@ const INTERNAL_TOOLS = [
 /**
  * Build the Anthropic-format tools array for a given agent.
  * Includes the internal set plus tools from each linked connector driver.
+ * Also returns a per-connector status array so callers can surface
+ * driver gaps to the model (and to humans in logs).
  */
 async function buildToolsForAgent(agent) {
   const tools = INTERNAL_TOOLS.map((t) => ({
@@ -151,11 +153,23 @@ async function buildToolsForAgent(agent) {
   }));
 
   const connectorIds = (agent.connectors || []).map((c) => c.id).filter(Boolean);
+  const connectors = [];
   if (connectorIds.length) {
-    const connectors = await Connector.find({ _id: { $in: connectorIds } });
-    for (const conn of connectors) {
+    const docs = await Connector.find({ _id: { $in: connectorIds } });
+    for (const conn of docs) {
       const driver = getDriver(conn.kind);
-      if (!driver?.tools?.length) continue;
+      const has_driver = Boolean(driver?.tools?.length);
+      connectors.push({
+        id: conn._id.toString(),
+        name: conn.name,
+        kind: conn.kind,
+        status: conn.status,
+        has_driver,
+      });
+      if (!has_driver) {
+        console.warn(`[agent-tools] connector "${conn.name}" linked to agent ${agent._id} has kind="${conn.kind}" with no registered driver — its tools will not be exposed to the model.`);
+        continue;
+      }
       for (const t of driver.tools) {
         tools.push({
           name: `${conn.name}__${t.name.replace(/\./g, "_")}`,
@@ -165,7 +179,7 @@ async function buildToolsForAgent(agent) {
       }
     }
   }
-  return tools;
+  return { tools, connectors };
 }
 
 /**
