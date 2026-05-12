@@ -9,7 +9,9 @@ const ChatMessageSchema = new mongoose.Schema(
     content_blocks: { type: mongoose.Schema.Types.Mixed, default: null },
     streaming: { type: Boolean, default: false },
   },
-  { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } },
+  // minimize:false keeps empty subobjects like a tool_use's `input: {}` — Anthropic's API
+  // requires the `input` field even when the tool was called with no arguments.
+  { timestamps: { createdAt: "created_at", updatedAt: "updated_at" }, minimize: false },
 );
 
 module.exports = mongoose.model("ChatMessage", ChatMessageSchema);

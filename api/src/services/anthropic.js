@@ -36,9 +36,38 @@ function buildSystem(agent, { skillsIndex, connectorsBlock } = {}) {
   return blocks;
 }
 
+// The Anthropic API rejects unknown fields and requires specific shapes per block type.
+// Persisted blocks can drift from spec: e.g. Mongoose strips `input: {}` (fixed via minimize:false
+// going forward, but old data still has the gap), and SDK responses include extra metadata like
+// `caller` that the API doesn't accept on input. This whitelists what we send.
+function sanitizeBlock(b) {
+  if (!b || typeof b !== "object") return null;
+  switch (b.type) {
+    case "text":
+      return { type: "text", text: b.text || "", ...(b.cache_control ? { cache_control: b.cache_control } : {}) };
+    case "tool_use":
+      return {
+        type: "tool_use",
+        id: b.id,
+        name: b.name,
+        input: b.input && typeof b.input === "object" ? b.input : {},
+      };
+    case "tool_result":
+      return {
+        type: "tool_result",
+        tool_use_id: b.tool_use_id,
+        content: b.content ?? "",
+        ...(b.is_error ? { is_error: true } : {}),
+      };
+    default:
+      return null;
+  }
+}
+
 function messageToAnthropic(m) {
   if (Array.isArray(m.content_blocks) && m.content_blocks.length) {
-    return { role: m.role, content: m.content_blocks };
+    const blocks = m.content_blocks.map(sanitizeBlock).filter(Boolean);
+    return { role: m.role, content: blocks };
   }
   return { role: m.role, content: m.content || "" };
 }
