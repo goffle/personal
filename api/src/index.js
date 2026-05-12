@@ -44,7 +44,7 @@ app.use("/oauth", require("./controllers/oauth"));
 app.use("/mcp", require("./controllers/mcp"));
 app.use("/organization", require("./controllers/organization"));
 app.use("/chat", require("./controllers/chat"));
-app.use("/message", require("./controllers/message"));
+app.use("/chat-message", require("./controllers/chat-message"));
 app.use("/agent", require("./controllers/agent"));
 app.use("/task", require("./controllers/task"));
 app.use("/comment", require("./controllers/comment"));

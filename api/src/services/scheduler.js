@@ -4,7 +4,8 @@ const CronJob = require("../models/cron-job");
 const Skill = require("../models/skill");
 const Agent = require("../models/agent");
 const Chat = require("../models/chat");
-const Message = require("../models/message");
+const ChatMessage = require("../models/chat-message");
+const { runAgentTurn } = require("./chat-runner");
 
 const tasks = new Map();
 
@@ -29,19 +30,17 @@ async function runJob(jobId) {
     });
     result.chat_id = chat._id.toString();
 
-    await Message.create({
+    await ChatMessage.create({
       chat_id: chat._id.toString(),
       organization_id: job.organization_id,
       role: "user",
       content: skill.body_md || skill.description || skill.name,
     });
 
-    // Placeholder until the LLM client is wired in (same state as /chat/:id/stream).
-    await Message.create({
-      chat_id: chat._id.toString(),
-      organization_id: job.organization_id,
-      role: "assistant",
-      content: `(scheduled run of skill "${skill.name}" — LLM client not yet wired)`,
+    await runAgentTurn({
+      chat,
+      agent,
+      ctx: { organization_id: job.organization_id, created_by: job.created_by },
     });
 
     job.last_run_at = new Date();

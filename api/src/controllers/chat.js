@@ -4,8 +4,10 @@ const jwt = require("jsonwebtoken");
 const router = express.Router();
 
 const Chat = require("../models/chat");
-const Message = require("../models/message");
+const ChatMessage = require("../models/chat-message");
+const Agent = require("../models/agent");
 const config = require("../config");
+const { runAgentTurn } = require("../services/chat-runner");
 
 const SERVER_ERROR = "SERVER_ERROR";
 const NOT_FOUND = "NOT_FOUND";
@@ -61,7 +63,7 @@ router.put("/:id", auth, async (req, res) => {
 router.delete("/:id", auth, async (req, res) => {
   try {
     await Chat.findByIdAndDelete(req.params.id);
-    await Message.deleteMany({ chat_id: req.params.id });
+    await ChatMessage.deleteMany({ chat_id: req.params.id });
     return res.status(200).send({ ok: true });
   } catch (err) {
     return res.status(500).send({ ok: false, code: SERVER_ERROR });
@@ -70,7 +72,7 @@ router.delete("/:id", auth, async (req, res) => {
 
 // SSE: POST /chat/:id/stream  body { content }
 // Authenticates manually (passport-jwt + cookies/header), persists the user message,
-// then streams an echo response token-by-token.
+// then drives the agent turn loop (Anthropic + tools), streaming text deltas to the client.
 router.post("/:id/stream", async (req, res) => {
   let user = null;
   try {
@@ -87,6 +89,7 @@ router.post("/:id/stream", async (req, res) => {
     return res.status(401).send({ ok: false, code: "UNAUTHORIZED" });
   }
 
+  let sseStarted = false;
   try {
     const chat = await Chat.findById(req.params.id);
     if (!chat) return res.status(404).send({ ok: false, code: NOT_FOUND });
@@ -94,51 +97,49 @@ router.post("/:id/stream", async (req, res) => {
     const content = (req.body?.content || "").trim();
     if (!content) return res.status(400).send({ ok: false, code: "INVALID_BODY" });
 
-    await Message.create({
+    if (!chat.agent_id) return res.status(400).send({ ok: false, code: "NO_AGENT", message: "Chat has no agent bound" });
+    const agent = await Agent.findById(chat.agent_id);
+    if (!agent) return res.status(404).send({ ok: false, code: "AGENT_NOT_FOUND" });
+
+    await ChatMessage.create({
       chat_id: chat._id.toString(),
       organization_id: chat.organization_id,
       role: "user",
       content,
     });
 
-    const assistantMsg = await Message.create({
-      chat_id: chat._id.toString(),
-      organization_id: chat.organization_id,
-      role: "assistant",
-      content: "",
-      streaming: true,
-    });
-
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.flushHeaders?.();
+    sseStarted = true;
 
-    const reply = `You said: "${content}". This is a placeholder echo until the LLM client is wired in.`;
-    const tokens = reply.split(/(\s+)/);
+    const send = (event, data) => {
+      if (event) res.write(`event: ${event}\n`);
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
 
-    let full = "";
-    let i = 0;
-    const interval = setInterval(async () => {
-      if (i >= tokens.length) {
-        clearInterval(interval);
-        assistantMsg.content = full;
-        assistantMsg.streaming = false;
-        await assistantMsg.save();
-        await Chat.findByIdAndUpdate(chat._id, { last_message_at: new Date() });
-        res.write(`event: done\ndata: ${JSON.stringify({ message_id: assistantMsg._id })}\n\n`);
-        res.end();
-        return;
-      }
-      const delta = tokens[i++];
-      full += delta;
-      res.write(`data: ${JSON.stringify({ delta })}\n\n`);
-    }, 40);
+    let aborted = false;
+    req.on("close", () => { aborted = true; });
 
-    req.on("close", () => clearInterval(interval));
+    const { assistantMessages } = await runAgentTurn({
+      chat,
+      agent,
+      ctx: { organization_id: chat.organization_id, created_by: user._id.toString() },
+      onDelta: (text) => { if (!aborted) send(null, { delta: text }); },
+      onAssistant: (msg) => { if (!aborted) send("assistant_saved", { message_id: msg._id }); },
+      onToolEvent: (evt) => { if (!aborted) send("tool_event", evt); },
+    });
+
+    if (!aborted) {
+      const last = assistantMessages[assistantMessages.length - 1];
+      send("done", { message_id: last?._id });
+      res.end();
+    }
   } catch (err) {
-    console.error(err);
-    if (!res.headersSent) return res.status(500).send({ ok: false, code: SERVER_ERROR });
+    console.error("[chat/stream]", err);
+    if (!sseStarted && !res.headersSent) return res.status(500).send({ ok: false, code: SERVER_ERROR, message: err.message });
+    res.write(`event: error\ndata: ${JSON.stringify({ message: err.message })}\n\n`);
     res.end();
   }
 });

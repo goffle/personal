@@ -12,4 +12,7 @@ module.exports = {
 
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
+
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "",
+  DEFAULT_MODEL: process.env.DEFAULT_MODEL || "claude-sonnet-4-6",
 };

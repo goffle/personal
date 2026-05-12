@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RiArrowLeftLine, RiDeleteBin6Line } from "react-icons/ri";
+import { RiArrowLeftLine, RiDeleteBin6Line, RiPlayLine } from "react-icons/ri";
 
 import API from "@/services/api";
 import useStore from "@/services/store";
@@ -102,6 +102,21 @@ export default function TaskDetail() {
     }
   }
 
+  async function runWithAgent() {
+    setSavingField("run-with-agent");
+    try {
+      const r = await API.post(`/task/${id}/run-with-agent`);
+      if (r.ok && r.data?.chat_id) {
+        toast.success("Agent started");
+        navigate("/chat");
+      } else {
+        toast.error(r.message || "Could not start agent");
+      }
+    } finally {
+      setSavingField(null);
+    }
+  }
+
   async function deleteTask() {
     if (!confirm("Delete this task and its comments?")) return;
     const r = await API.remove(`/task/${id}`);
@@ -120,9 +135,21 @@ export default function TaskDetail() {
         <Link to="/tasks" className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
           <RiArrowLeftLine className="h-4 w-4" /> Back to tasks
         </Link>
-        <button onClick={deleteTask} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50">
-          <RiDeleteBin6Line className="h-3.5 w-3.5" /> Delete
-        </button>
+        <div className="flex items-center gap-2">
+          {task.assignee_type === "agent" && task.assignee_id && (
+            <button
+              onClick={runWithAgent}
+              disabled={savingField === "run-with-agent"}
+              className="flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              <RiPlayLine className="h-3.5 w-3.5" />
+              {savingField === "run-with-agent" ? "Starting…" : `Run with ${task.assignee_name || "agent"}`}
+            </button>
+          )}
+          <button onClick={deleteTask} className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1 text-xs text-red-600 hover:bg-red-50">
+            <RiDeleteBin6Line className="h-3.5 w-3.5" /> Delete
+          </button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-5">

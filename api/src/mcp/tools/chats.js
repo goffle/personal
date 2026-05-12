@@ -1,6 +1,6 @@
 const { z } = require("zod");
 const Chat = require("../../models/chat");
-const Message = require("../../models/message");
+const ChatMessage = require("../../models/chat-message");
 const { sanitizeSearch, formatResult, formatError, resolveCaller, chatUrl } = require("./_shared");
 
 function registerChatTools(server) {
@@ -37,7 +37,7 @@ function registerChatTools(server) {
         await resolveCaller(extra);
         const chat = await Chat.findById(params.id).lean();
         if (!chat) return formatError("Chat not found");
-        const messages = await Message.find({ chat_id: params.id }).sort({ created_at: 1 }).lean();
+        const messages = await ChatMessage.find({ chat_id: params.id }).sort({ created_at: 1 }).lean();
         return formatResult({ chat: { ...chat, url: chatUrl(chat._id) }, messages });
       } catch (err) {
         return formatError(err.message);
@@ -81,7 +81,7 @@ function registerChatTools(server) {
         const chat = await Chat.findById(params.chatId);
         if (!chat) return formatError("Chat not found");
 
-        await Message.create({
+        await ChatMessage.create({
           chat_id: chat._id.toString(),
           organization_id: chat.organization_id,
           role: "user",
@@ -89,7 +89,7 @@ function registerChatTools(server) {
         });
 
         const reply = `You said: "${params.content}". This is a placeholder echo until the LLM client is wired in.`;
-        const assistantMsg = await Message.create({
+        const assistantMsg = await ChatMessage.create({
           chat_id: chat._id.toString(),
           organization_id: chat.organization_id,
           role: "assistant",

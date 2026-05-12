@@ -25,7 +25,7 @@ export default function Chat() {
   }
 
   async function loadMessages(id) {
-    const r = await API.post("/message/search", { chat_id: id, limit: 200, sort: { created_at: 1 } });
+    const r = await API.post("/chat-message/search", { chat_id: id, limit: 200, sort: { created_at: 1 } });
     if (r.ok) setMessages(r.data);
   }
 

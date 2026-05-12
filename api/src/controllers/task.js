@@ -4,6 +4,10 @@ const router = express.Router();
 
 const Task = require("../models/task");
 const Comment = require("../models/comment");
+const Agent = require("../models/agent");
+const Chat = require("../models/chat");
+const ChatMessage = require("../models/chat-message");
+const { runAgentTurn } = require("../services/chat-runner");
 
 const SERVER_ERROR = "SERVER_ERROR";
 const NOT_FOUND = "NOT_FOUND";
@@ -75,6 +79,51 @@ router.put("/:id", auth, async (req, res) => {
     return res.status(200).send({ ok: true, data });
   } catch (err) {
     return res.status(500).send({ ok: false, code: SERVER_ERROR });
+  }
+});
+
+router.post("/:id/run-with-agent", auth, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).send({ ok: false, code: NOT_FOUND });
+    if (task.assignee_type !== "agent" || !task.assignee_id) {
+      return res.status(400).send({ ok: false, code: "NO_AGENT_ASSIGNEE", message: "Task must be assigned to an agent." });
+    }
+    const agent = await Agent.findById(task.assignee_id);
+    if (!agent) return res.status(404).send({ ok: false, code: "AGENT_NOT_FOUND" });
+
+    const chat = await Chat.create({
+      title: `${task.reference} · ${task.title}`,
+      organization_id: task.organization_id,
+      agent_id: agent._id.toString(),
+      created_by: req.user._id.toString(),
+    });
+
+    const userContent = [
+      `Task ${task.reference}: ${task.title}`,
+      task.entity ? `Entity: ${task.entity}` : null,
+      task.description ? `\n${task.description}` : null,
+      "\nPick the most relevant skill from your index (use `read_skill` to load it) and handle this task. Create sub-tasks or proposals as needed; do not take irreversible actions without confirmation.",
+    ].filter(Boolean).join("\n");
+
+    await ChatMessage.create({
+      chat_id: chat._id.toString(),
+      organization_id: chat.organization_id,
+      role: "user",
+      content: userContent,
+    });
+
+    // Fire-and-forget — UI navigates to the chat and polls.
+    runAgentTurn({
+      chat,
+      agent,
+      ctx: { organization_id: task.organization_id, created_by: req.user._id.toString() },
+    }).catch((err) => console.error(`[task ${task.reference}] agent run failed:`, err.message));
+
+    return res.status(200).send({ ok: true, data: { chat_id: chat._id.toString() } });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send({ ok: false, code: SERVER_ERROR, message: err.message });
   }
 });
 

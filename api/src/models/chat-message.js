@@ -1,14 +1,15 @@
 const mongoose = require("mongoose");
 
-const MessageSchema = new mongoose.Schema(
+const ChatMessageSchema = new mongoose.Schema(
   {
     chat_id: { type: String, index: true, required: true },
     organization_id: { type: String, index: true },
     role: { type: String, enum: ["user", "assistant", "system"], required: true },
     content: { type: String, default: "" },
+    content_blocks: { type: mongoose.Schema.Types.Mixed, default: null },
     streaming: { type: Boolean, default: false },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } },
 );
 
-module.exports = mongoose.model("Message", MessageSchema);
+module.exports = mongoose.model("ChatMessage", ChatMessageSchema);

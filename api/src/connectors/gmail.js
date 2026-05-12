@@ -8,6 +8,7 @@ const API_BASE = "https://gmail.googleapis.com/gmail/v1";
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/userinfo.email",
   "openid",
 ];
@@ -96,10 +97,62 @@ async function test(connector) {
   return r.json();
 }
 
+function decodeBase64Url(s) {
+  if (!s) return "";
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(b64, "base64").toString("utf-8");
+}
+
+function extractBodyFromPayload(payload) {
+  if (!payload) return "";
+  if (payload.mimeType === "text/plain" && payload.body?.data) return decodeBase64Url(payload.body.data);
+  if (payload.parts) {
+    for (const part of payload.parts) {
+      const found = extractBodyFromPayload(part);
+      if (found) return found;
+    }
+  }
+  if (payload.body?.data && (!payload.mimeType || payload.mimeType.startsWith("text/"))) {
+    return decodeBase64Url(payload.body.data);
+  }
+  return "";
+}
+
+function headerValue(message, name) {
+  const h = (message.payload?.headers || []).find((x) => x.name.toLowerCase() === name.toLowerCase());
+  return h?.value || "";
+}
+
+function summarizeMessage(message) {
+  return {
+    id: message.id,
+    thread_id: message.threadId,
+    from: headerValue(message, "From"),
+    to: headerValue(message, "To"),
+    subject: headerValue(message, "Subject"),
+    date: headerValue(message, "Date"),
+    snippet: message.snippet || "",
+    label_ids: message.labelIds || [],
+  };
+}
+
+function encodeRfc822(message) {
+  const lines = [];
+  if (message.to) lines.push(`To: ${message.to}`);
+  if (message.cc) lines.push(`Cc: ${message.cc}`);
+  if (message.subject) lines.push(`Subject: ${message.subject}`);
+  lines.push("MIME-Version: 1.0");
+  lines.push("Content-Type: text/plain; charset=UTF-8");
+  lines.push("");
+  lines.push(message.body || "");
+  const raw = lines.join("\r\n");
+  return Buffer.from(raw, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 const tools = [
   {
     name: "gmail.search_threads",
-    description: "Search Gmail threads using Gmail query syntax (e.g. 'is:unread newer_than:1d').",
+    description: "Search Gmail threads using Gmail query syntax (e.g. 'is:unread newer_than:1d'). Returns thread ids and snippets.",
     schema: {
       type: "object",
       properties: {
@@ -115,7 +168,81 @@ const tools = [
       u.searchParams.set("maxResults", String(args.max_results || 20));
       const r = await fetch(u, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) throw new Error(`gmail search failed: ${r.status} ${await r.text()}`);
-      return r.json();
+      const j = await r.json();
+      return { result_size_estimate: j.resultSizeEstimate || 0, threads: (j.threads || []).map((t) => ({ id: t.id, snippet: t.snippet || "" })) };
+    },
+  },
+  {
+    name: "gmail.get_thread",
+    description: "Fetch a Gmail thread by id. Returns subject, participants and each message's headers + plain-text body.",
+    schema: {
+      type: "object",
+      properties: {
+        thread_id: { type: "string" },
+        format: { type: "string", enum: ["summary", "full"], default: "full", description: "'summary' omits message bodies." },
+      },
+      required: ["thread_id"],
+    },
+    async handler(connector, args) {
+      const token = await getAccessToken(connector);
+      const r = await fetch(`${API_BASE}/users/me/threads/${encodeURIComponent(args.thread_id)}?format=full`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) throw new Error(`gmail get_thread failed: ${r.status} ${await r.text()}`);
+      const j = await r.json();
+      const messages = (j.messages || []).map((m) => {
+        const base = summarizeMessage(m);
+        if (args.format === "summary") return base;
+        return { ...base, body: extractBodyFromPayload(m.payload) };
+      });
+      return { thread_id: j.id, subject: headerValue(j.messages?.[0] || {}, "Subject"), message_count: messages.length, messages };
+    },
+  },
+  {
+    name: "gmail.create_draft",
+    description: "Create a Gmail draft. Use thread_id + in_reply_to_message_id when replying to an existing thread; omit them for a new outbound draft.",
+    schema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Recipient (comma-separated allowed)." },
+        cc: { type: "string" },
+        subject: { type: "string" },
+        body: { type: "string" },
+        thread_id: { type: "string", description: "Optional Gmail thread id to attach the draft to." },
+      },
+      required: ["body"],
+    },
+    async handler(connector, args) {
+      const token = await getAccessToken(connector);
+      const raw = encodeRfc822({ to: args.to, cc: args.cc, subject: args.subject, body: args.body });
+      const payload = { message: { raw, ...(args.thread_id ? { threadId: args.thread_id } : {}) } };
+      const r = await fetch(`${API_BASE}/users/me/drafts`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(`gmail create_draft failed: ${r.status} ${await r.text()}`);
+      const j = await r.json();
+      return { draft_id: j.id, message_id: j.message?.id, thread_id: j.message?.threadId };
+    },
+  },
+  {
+    name: "gmail.mark_read",
+    description: "Mark a Gmail thread as read (removes the UNREAD label from all messages in it).",
+    schema: {
+      type: "object",
+      properties: { thread_id: { type: "string" } },
+      required: ["thread_id"],
+    },
+    async handler(connector, args) {
+      const token = await getAccessToken(connector);
+      const r = await fetch(`${API_BASE}/users/me/threads/${encodeURIComponent(args.thread_id)}/modify`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ removeLabelIds: ["UNREAD"] }),
+      });
+      if (!r.ok) throw new Error(`gmail mark_read failed: ${r.status} ${await r.text()}`);
+      return { thread_id: args.thread_id, marked_read: true };
     },
   },
 ];
