@@ -1,0 +1,79 @@
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { RiLogoutBoxRLine } from "react-icons/ri";
+
+import useStore from "@/services/store";
+import API from "@/services/api";
+
+function initial(user) {
+  return (user?.firstname?.[0] || user?.email?.[0] || "?").toUpperCase();
+}
+
+export default function Header() {
+  const { user, organization, setUser, setOrganization } = useStore();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e) {
+      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
+    }
+    function onKey(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  async function logout() {
+    await API.post("/user/logout");
+    API.setToken(null);
+    setUser(null);
+    setOrganization(null);
+    navigate("/auth");
+  }
+
+  return (
+    <header className="flex h-12 shrink-0 items-center justify-end border-b border-slate-200 bg-white px-4">
+      <div className="relative" ref={rootRef}>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-medium text-white hover:bg-slate-800"
+          aria-label="Account menu"
+        >
+          {initial(user)}
+        </button>
+
+        {open && (
+          <div className="absolute right-0 top-10 z-50 w-72 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+            <div className="flex flex-col items-center gap-1 px-4 py-5">
+              <div className="mb-2 flex h-14 w-14 items-center justify-center rounded-full bg-slate-900 text-xl font-medium text-white">
+                {initial(user)}
+              </div>
+              <div className="text-sm font-semibold text-slate-900">
+                {user?.firstname || user?.lastname ? `${user?.firstname || ""} ${user?.lastname || ""}`.trim() : "—"}
+              </div>
+              <div className="text-xs text-slate-500">{user?.email}</div>
+              {organization?.name && <div className="mt-0.5 text-xs text-slate-400">{organization.name}</div>}
+            </div>
+            <div className="border-t border-slate-100">
+              <button
+                onClick={logout}
+                className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <RiLogoutBoxRLine className="h-4 w-4 text-slate-400" />
+                Logout
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </header>
+  );
+}

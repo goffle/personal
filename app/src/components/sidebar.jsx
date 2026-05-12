@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import {
   RiCheckboxMultipleLine,
   RiChat3Line,
@@ -8,11 +8,9 @@ import {
   RiBookOpenLine,
   RiPlugLine,
   RiServerLine,
-  RiLogoutBoxRLine,
 } from "react-icons/ri";
 
 import useStore from "@/services/store";
-import API from "@/services/api";
 
 const NAV = [
   { to: "/tasks", label: "Tasks", icon: RiCheckboxMultipleLine },
@@ -26,16 +24,7 @@ const NAV = [
 ];
 
 export default function Sidebar() {
-  const { user, organization, setUser, setOrganization } = useStore();
-  const navigate = useNavigate();
-
-  async function logout() {
-    await API.post("/user/logout");
-    API.setToken(null);
-    setUser(null);
-    setOrganization(null);
-    navigate("/auth");
-  }
+  const { organization } = useStore();
 
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -60,21 +49,6 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </nav>
-
-      <div className="border-t border-slate-200 px-3 py-3">
-        <div className="mb-2 text-xs text-slate-600">
-          <div className="truncate font-medium text-slate-800">
-            {user?.firstname} {user?.lastname}
-          </div>
-          <div className="truncate text-slate-500">{user?.email}</div>
-        </div>
-        <button
-          onClick={logout}
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
-        >
-          <RiLogoutBoxRLine className="h-3.5 w-3.5" /> Sign out
-        </button>
-      </div>
     </aside>
   );
 }
