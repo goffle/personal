@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
-import { RiArrowLeftLine, RiDeleteBin6Line, RiFolder3Line } from "react-icons/ri";
+import { RiArrowLeftLine, RiDeleteBin6Line, RiDownloadLine, RiFolder3Line, RiEditLine } from "react-icons/ri";
 
 import API from "@/services/api";
 import useStore from "@/services/store";
 import Loader from "@/components/loader";
+import Markdown from "@/components/markdown";
 
 export default function DataRoomDetail() {
   const { id } = useParams();
@@ -18,7 +19,8 @@ export default function DataRoomDetail() {
   const [authors, setAuthors] = useState({}); // id → display name
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
 
   async function load() {
     setLoading(true);
@@ -26,7 +28,6 @@ export default function DataRoomDetail() {
     if (!r.ok) { setLoading(false); return; }
     setFile(r.data);
     setContent(r.data.content_md || "");
-    setDirty(false);
 
     // Load full file list once to resolve ancestor path
     const all = await API.post("/file/search", {
@@ -58,17 +59,41 @@ export default function DataRoomDetail() {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
 
+  function startEdit() {
+    setDraft(content);
+    setEditing(true);
+  }
+
   async function save() {
     setSaving(true);
-    const r = await API.put(`/file/${id}`, { content_md: content });
+    const r = await API.put(`/file/${id}`, { content_md: draft });
     setSaving(false);
     if (r.ok) {
       setFile(r.data);
-      setDirty(false);
+      setContent(draft);
+      setEditing(false);
       toast.success("Saved");
     } else {
       toast.error("Save failed");
     }
+  }
+
+  function cancelEdit() {
+    setDraft("");
+    setEditing(false);
+  }
+
+  function download() {
+    const text = editing ? draft : content;
+    const blob = new Blob([text || ""], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${safeFilename(file.name)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   async function remove() {
@@ -80,7 +105,7 @@ export default function DataRoomDetail() {
     }
   }
 
-  const breadcrumb = useMemo(() => buildBreadcrumb(ancestors), [ancestors]);
+  const dirty = editing && draft !== content;
 
   if (loading) return <div className="flex h-full items-center justify-center"><Loader /></div>;
   if (!file) return <div className="p-6 text-slate-500">File not found.</div>;
@@ -90,72 +115,126 @@ export default function DataRoomDetail() {
       ? "You"
       : authors[file.created_by] || file.created_by || "—";
 
+  const wordsValue = editing ? draft : content;
+
   return (
     <div className="flex h-full flex-col">
       {/* Top bar with breadcrumb + actions */}
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-        <nav className="flex items-center gap-1 text-sm text-slate-500 min-w-0">
+        <nav className="flex min-w-0 items-center gap-1 text-sm text-slate-500">
           <Link to="/data-room" className="flex items-center gap-1 hover:text-slate-900">
             <RiArrowLeftLine className="h-4 w-4" />
             Data Room
           </Link>
-          {breadcrumb.map((seg, i) => (
-            <span key={`${seg.kind}-${i}`} className="flex items-center gap-1 min-w-0">
+          {ancestors.map((seg) => (
+            <span key={seg._id} className="flex min-w-0 items-center gap-1">
               <span className="text-slate-300">/</span>
-              {seg.kind === "ellipsis" ? (
-                <span className="text-slate-400">…</span>
-              ) : (
-                <Link
-                  to={`/data-room?open=${seg._id}`}
-                  className="flex items-center gap-1 truncate text-slate-600 hover:text-slate-900 hover:underline"
-                >
-                  <RiFolder3Line className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                  <span className="truncate">{seg.name}</span>
-                </Link>
-              )}
+              <Link
+                to={`/data-room?open=${seg._id}`}
+                className="flex items-center gap-1 truncate text-slate-600 hover:text-slate-900 hover:underline"
+              >
+                <RiFolder3Line className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                <span className="truncate">{seg.name}</span>
+              </Link>
             </span>
           ))}
+          <span className="flex min-w-0 items-center gap-1">
+            <span className="text-slate-300">/</span>
+            <span className="truncate text-slate-700">{file.name}</span>
+          </span>
         </nav>
 
         <div className="flex items-center gap-2">
-          {dirty && <span className="text-xs text-slate-400">Unsaved changes</span>}
-          <button
-            onClick={save}
-            disabled={saving || !dirty}
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button
-            onClick={remove}
-            className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50"
-            title="Delete"
-          >
-            <RiDeleteBin6Line className="h-3.5 w-3.5" />
-          </button>
+          {editing ? (
+            <>
+              {dirty && <span className="text-xs text-slate-400">Unsaved changes</span>}
+              <button
+                onClick={cancelEdit}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={save}
+                disabled={saving || !dirty}
+                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Save"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={download}
+                className="flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                title="Download as Markdown"
+              >
+                <RiDownloadLine className="h-3.5 w-3.5" /> Download
+              </button>
+              <button
+                onClick={startEdit}
+                className="flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                <RiEditLine className="h-3.5 w-3.5" /> Edit
+              </button>
+              <button
+                onClick={remove}
+                className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                title="Delete"
+              >
+                <RiDeleteBin6Line className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* Main content + right sidebar */}
       <div className="flex flex-1 overflow-hidden">
-        <main className="flex-1 overflow-auto bg-white p-8">
-          <input
-            value={file.name}
-            onChange={(e) => setFile({ ...file, name: e.target.value })}
-            onBlur={async (e) => {
-              const v = e.target.value.trim();
-              if (!v || v === file.name) return;
-              const r = await API.put(`/file/${id}`, { name: v });
-              if (r.ok) { setFile(r.data); toast.success("Renamed", { duration: 1200 }); }
-            }}
-            className="mb-6 w-full border-none bg-transparent text-3xl font-semibold text-slate-900 outline-none"
-          />
-          <textarea
-            value={content}
-            onChange={(e) => { setContent(e.target.value); setDirty(true); }}
-            placeholder="# Write in Markdown…"
-            className="h-[calc(100vh-260px)] w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-6 outline-none focus:bg-white focus:border-slate-400"
-          />
+        <main className="flex-1 overflow-auto bg-white">
+          <div className="mx-auto max-w-3xl px-8 py-10">
+            <input
+              value={file.name}
+              onChange={(e) => setFile({ ...file, name: e.target.value })}
+              onBlur={async (e) => {
+                const v = e.target.value.trim();
+                if (!v || v === file.name) return;
+                const r = await API.put(`/file/${id}`, { name: v });
+                if (r.ok) { setFile(r.data); toast.success("Renamed", { duration: 1200 }); }
+              }}
+              className="w-full border-none bg-transparent text-3xl font-semibold text-slate-900 outline-none"
+            />
+
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+                {initialOf(creatorName)}
+              </span>
+              <span className="text-slate-700">{creatorName}</span>
+              <span className="text-slate-300">·</span>
+              <span>Édité {fmtDate(file.updated_at)}</span>
+            </div>
+
+            <div className="mt-8">
+              {editing ? (
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="# Write in Markdown…"
+                  autoFocus
+                  className="h-[calc(100vh-260px)] w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-6 outline-none focus:bg-white focus:border-slate-400"
+                />
+              ) : content ? (
+                <Markdown content={content} className="text-[15px] leading-7" />
+              ) : (
+                <button
+                  onClick={startEdit}
+                  className="text-sm text-slate-400 hover:text-slate-600"
+                >
+                  Empty — click to write…
+                </button>
+              )}
+            </div>
+          </div>
         </main>
 
         <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-slate-50 p-5">
@@ -176,13 +255,9 @@ export default function DataRoomDetail() {
           </Field>
 
           <Field label="Created by">{creatorName}</Field>
-          <Field label="Created">{fmtDate(file.created_at)}</Field>
           <Field label="Updated">{fmtDate(file.updated_at)}</Field>
-          <Field label="Characters">{(content || "").length.toLocaleString()}</Field>
-          <Field label="Words">{wordCount(content)}</Field>
-          <Field label="ID">
-            <code className="break-all rounded bg-slate-200 px-1 py-0.5 text-[10px] text-slate-700">{file._id}</code>
-          </Field>
+          <Field label="Words">{wordCount(wordsValue)}</Field>
+          <Field label="Chars">{(wordsValue || "").length.toLocaleString()}</Field>
         </aside>
       </div>
     </div>
@@ -198,17 +273,16 @@ function Field({ label, children }) {
   );
 }
 
-function buildBreadcrumb(ancestors) {
-  // Show only the immediate parent when path is shallow; collapse the middle when deep.
-  if (ancestors.length === 0) return [];
-  if (ancestors.length === 1) return [{ kind: "folder", ...ancestors[0] }];
-  if (ancestors.length === 2) return ancestors.map((a) => ({ kind: "folder", ...a }));
-  // 3+ → root / … / parent
-  return [
-    { kind: "folder", ...ancestors[0] },
-    { kind: "ellipsis" },
-    { kind: "folder", ...ancestors[ancestors.length - 1] },
-  ];
+function safeFilename(name) {
+  const base = (name || "untitled").replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, " ").trim();
+  return base || "untitled";
+}
+
+function initialOf(name) {
+  if (!name) return "?";
+  const trimmed = name.trim();
+  if (!trimmed || trimmed === "—") return "?";
+  return trimmed[0].toUpperCase();
 }
 
 function fmtDate(v) {
