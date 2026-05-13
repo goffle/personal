@@ -6,10 +6,16 @@ const { sanitizeSearch, formatResult, formatError, resolveCaller, taskUrl } = re
 const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
 const STATUSES = ["todo", "doing", "waiting", "done"];
 
+const ChecklistItem = z.object({
+  _id: z.string().optional().describe("Existing item id (omit to add a new item)"),
+  text: z.string().min(1),
+  done: z.boolean().default(false).optional(),
+});
+
 function registerTaskTools(server) {
   server.tool(
     "search_tasks",
-    "Search tasks in the caller's workspace. Filters: search (text on title/description), status, assignee_id, assignee_type ('user' or 'agent'), priority, entity, sprint, reference, external_id. Returns: id, reference, title, status, priority, entity, sprint, due_at, assignee_id, assignee_type, comment_count, created_at. Examples: {status:'doing', entity:'selego'} → in-progress on Selego. {assignee_type:'agent'} → all tasks delegated to an agent.",
+    "Search tasks in the caller's workspace. Filters: search (text on title/description), status, assignee_id, assignee_type ('user' or 'agent'), priority, entity, sprint, reference, external_id. Returns: id, reference, title, status, priority, entity, sprint, due_at, assignee_id, assignee_type, comment_count, checklist (array of {_id, text, done}), created_at. Examples: {status:'doing', entity:'selego'} → in-progress on Selego. {assignee_type:'agent'} → all tasks delegated to an agent.",
     {
       search: z.string().optional().describe("Text search on title or description"),
       status: z.enum(STATUSES).optional(),
@@ -59,7 +65,7 @@ function registerTaskTools(server) {
 
   server.tool(
     "get_task",
-    "Get a single task by ID with its comments. Returns the full task (reference, entity, sprint, external_id, ...) plus an array of comments. Example: {id:'67abc...'}.",
+    "Get a single task by ID with its comments. Returns the full task (reference, entity, sprint, external_id, checklist as array of {_id, text, done}, ...) plus an array of comments. Example: {id:'67abc...'}.",
     { id: z.string().describe("MongoDB ObjectId of the task") },
     async (params, extra) => {
       try {
@@ -76,7 +82,7 @@ function registerTaskTools(server) {
 
   server.tool(
     "create_task",
-    "Create a task in the caller's workspace. A human-readable reference (e.g. TASK-12) is assigned automatically. Sprint convention: ISO week names like '2026-W19' (Monday → Sunday) or 'Backlog'. When external_id is provided, behaves as find-or-create: if a task with that external_id already exists in the workspace, the existing task is returned with created:false (no duplicate, no update). Use external_id to make migrations idempotent and rerunnable. All params are snake_case. Example: {title:'Fix login bug', entity:'selego', sprint:'2026-W19', priority:'high', external_id:'notion:abc123'}.",
+    "Create a task in the caller's workspace. A human-readable reference (e.g. TASK-12) is assigned automatically. Sprint convention: ISO week names like '2026-W19' (Monday → Sunday) or 'Backlog'. When external_id is provided, behaves as find-or-create: if a task with that external_id already exists in the workspace, the existing task is returned with created:false (no duplicate, no update). Use external_id to make migrations idempotent and rerunnable. Optional checklist: array of {text, done} sub-items shown as checkboxes in the UI. All params are snake_case. Example: {title:'Fix login bug', entity:'selego', sprint:'2026-W19', priority:'high', checklist:[{text:'Repro locally'},{text:'Write failing test'}], external_id:'notion:abc123'}.",
     {
       title: z.string().describe("Required"),
       description: z.string().optional(),
@@ -92,6 +98,7 @@ function registerTaskTools(server) {
         .string()
         .optional()
         .describe("Stable id from an external source (e.g. 'notion:abc123'). Makes create_task idempotent."),
+      checklist: z.array(ChecklistItem).optional().describe("Initial checklist items, e.g. [{text:'Repro locally'},{text:'Write test', done:false}]"),
     },
     async (params, extra) => {
       try {
@@ -128,6 +135,7 @@ function registerTaskTools(server) {
         if (params.sprint) payload.sprint = params.sprint;
         if (params.due_at) payload.due_at = new Date(params.due_at);
         if (params.external_id) payload.external_id = params.external_id;
+        if (params.checklist) payload.checklist = params.checklist;
 
         const task = await Task.create(payload);
         return formatResult({ created: true, task: { ...task.toObject(), url: taskUrl(task._id) } });
@@ -139,7 +147,7 @@ function registerTaskTools(server) {
 
   server.tool(
     "update_task",
-    "Update task fields by ID. All fields are flat snake_case (no fields:{} wrapper). The reference and external_id are immutable. At least one updatable field must be provided. Example: {id:'67abc...', status:'done', sprint:'Backlog'}.",
+    "Update task fields by ID. All fields are flat snake_case (no fields:{} wrapper). The reference and external_id are immutable. At least one updatable field must be provided. The checklist field replaces the entire array — to toggle one item, fetch with get_task, mutate locally, and pass the whole array back; preserve _id on existing items so they're not duplicated. Example: {id:'67abc...', status:'done', sprint:'Backlog'}. Checklist example: {id:'67abc...', checklist:[{_id:'68def...', text:'Repro locally', done:true},{text:'New item'}]}.",
     {
       id: z.string(),
       title: z.string().optional(),
@@ -152,6 +160,7 @@ function registerTaskTools(server) {
       entity: z.enum(ENTITIES).optional(),
       sprint: z.string().nullable().optional(),
       due_at: z.string().nullable().optional(),
+      checklist: z.array(ChecklistItem).optional().describe("Replaces the full checklist array. Preserve _id on existing items to keep them; omit _id on new items."),
     },
     async (params, extra) => {
       try {

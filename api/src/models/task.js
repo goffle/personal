@@ -3,6 +3,14 @@ const mongoose = require("mongoose");
 const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
 const STATUSES = ["todo", "doing", "waiting", "done"];
 
+const ChecklistItemSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true },
+    done: { type: Boolean, default: false },
+  },
+  { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } },
+);
+
 const TaskSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
@@ -20,6 +28,7 @@ const TaskSchema = new mongoose.Schema(
     due_at: { type: Date },
     created_by: { type: String },
     comment_count: { type: Number, default: 0 },
+    checklist: { type: [ChecklistItemSchema], default: [] },
   },
   { timestamps: { createdAt: "created_at", updatedAt: "updated_at" } },
 );

@@ -99,11 +99,16 @@ router.post("/:id/run-with-agent", auth, async (req, res) => {
       created_by: req.user._id.toString(),
     });
 
+    const checklistBlock = (task.checklist || []).length
+      ? `\nChecklist:\n${task.checklist.map((it) => `- [${it.done ? "x" : " "}] ${it.text}`).join("\n")}`
+      : null;
+
     const userContent = [
       `Task ${task.reference}: ${task.title}`,
       task.entity ? `Entity: ${task.entity}` : null,
       task.description ? `\n${task.description}` : null,
-      "\nPick the most relevant skill from your index (use `read_skill` to load it) and handle this task. Create sub-tasks or proposals as needed; do not take irreversible actions without confirmation.",
+      checklistBlock,
+      "\nPick the most relevant skill from your index (use `read_skill` to load it) and handle this task. Create sub-tasks or proposals as needed; do not take irreversible actions without confirmation. If a checklist is present, mark items done via update_task as you complete them.",
     ].filter(Boolean).join("\n");
 
     await ChatMessage.create({

@@ -118,148 +118,141 @@ export default function DataRoomDetail() {
   const wordsValue = editing ? draft : content;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Top bar with breadcrumb + actions */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
-        <nav className="flex min-w-0 items-center gap-1 text-sm text-slate-500">
-          <Link to="/data-room" className="flex items-center gap-1 hover:text-slate-900">
-            <RiArrowLeftLine className="h-4 w-4" />
-            Data Room
-          </Link>
-          {ancestors.map((seg) => (
-            <span key={seg._id} className="flex min-w-0 items-center gap-1">
+    <div className="flex h-full overflow-hidden">
+      <main className="flex-1 overflow-auto bg-white">
+        <div className="mx-auto max-w-3xl px-8 py-10">
+          <nav className="mb-4 flex min-w-0 items-center gap-1 text-sm text-slate-500">
+            <Link to="/data-room" className="flex items-center gap-1 hover:text-slate-900">
+              <RiArrowLeftLine className="h-4 w-4" />
+              Data Room
+            </Link>
+            {ancestors.map((seg) => (
+              <span key={seg._id} className="flex min-w-0 items-center gap-1">
+                <span className="text-slate-300">/</span>
+                <Link
+                  to={`/data-room?open=${seg._id}`}
+                  className="flex items-center gap-1 truncate text-slate-600 hover:text-slate-900 hover:underline"
+                >
+                  <RiFolder3Line className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+                  <span className="truncate">{seg.name}</span>
+                </Link>
+              </span>
+            ))}
+            <span className="flex min-w-0 items-center gap-1">
               <span className="text-slate-300">/</span>
-              <Link
-                to={`/data-room?open=${seg._id}`}
-                className="flex items-center gap-1 truncate text-slate-600 hover:text-slate-900 hover:underline"
-              >
-                <RiFolder3Line className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                <span className="truncate">{seg.name}</span>
-              </Link>
+              <span className="truncate text-slate-700">{file.name}</span>
             </span>
-          ))}
-          <span className="flex min-w-0 items-center gap-1">
-            <span className="text-slate-300">/</span>
-            <span className="truncate text-slate-700">{file.name}</span>
-          </span>
-        </nav>
+          </nav>
 
-        <div className="flex items-center gap-2">
-          {editing ? (
-            <>
-              {dirty && <span className="text-xs text-slate-400">Unsaved changes</span>}
-              <button
-                onClick={cancelEdit}
-                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={save}
-                disabled={saving || !dirty}
-                className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={download}
-                className="flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-                title="Download as Markdown"
-              >
-                <RiDownloadLine className="h-3.5 w-3.5" /> Download
-              </button>
+          <input
+            value={file.name}
+            onChange={(e) => setFile({ ...file, name: e.target.value })}
+            onBlur={async (e) => {
+              const v = e.target.value.trim();
+              if (!v || v === file.name) return;
+              const r = await API.put(`/file/${id}`, { name: v });
+              if (r.ok) { setFile(r.data); toast.success("Renamed", { duration: 1200 }); }
+            }}
+            className="w-full border-none bg-transparent text-3xl font-semibold text-slate-900 outline-none"
+          />
+
+          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+              {initialOf(creatorName)}
+            </span>
+            <span className="text-slate-700">{creatorName}</span>
+            <span className="text-slate-300">·</span>
+            <span>Édité {fmtDate(file.updated_at)}</span>
+          </div>
+
+          <div className="mt-8">
+            {editing ? (
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder="# Write in Markdown…"
+                autoFocus
+                className="h-[calc(100vh-260px)] w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-6 outline-none focus:bg-white focus:border-slate-400"
+              />
+            ) : content ? (
+              <Markdown content={content} className="text-[15px] leading-7" />
+            ) : (
               <button
                 onClick={startEdit}
-                className="flex items-center gap-1 rounded-md border border-slate-200 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                className="text-sm text-slate-400 hover:text-slate-600"
               >
-                <RiEditLine className="h-3.5 w-3.5" /> Edit
+                Empty — click to write…
               </button>
-              <button
-                onClick={remove}
-                className="flex items-center gap-1 rounded-md border border-slate-200 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50"
-                title="Delete"
-              >
-                <RiDeleteBin6Line className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Main content + right sidebar */}
-      <div className="flex flex-1 overflow-hidden">
-        <main className="flex-1 overflow-auto bg-white">
-          <div className="mx-auto max-w-3xl px-8 py-10">
-            <input
-              value={file.name}
-              onChange={(e) => setFile({ ...file, name: e.target.value })}
-              onBlur={async (e) => {
-                const v = e.target.value.trim();
-                if (!v || v === file.name) return;
-                const r = await API.put(`/file/${id}`, { name: v });
-                if (r.ok) { setFile(r.data); toast.success("Renamed", { duration: 1200 }); }
-              }}
-              className="w-full border-none bg-transparent text-3xl font-semibold text-slate-900 outline-none"
-            />
-
-            <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
-                {initialOf(creatorName)}
-              </span>
-              <span className="text-slate-700">{creatorName}</span>
-              <span className="text-slate-300">·</span>
-              <span>Édité {fmtDate(file.updated_at)}</span>
-            </div>
-
-            <div className="mt-8">
-              {editing ? (
-                <textarea
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="# Write in Markdown…"
-                  autoFocus
-                  className="h-[calc(100vh-260px)] w-full resize-none rounded-md border border-slate-200 bg-slate-50 px-4 py-3 font-mono text-sm leading-6 outline-none focus:bg-white focus:border-slate-400"
-                />
-              ) : content ? (
-                <Markdown content={content} className="text-[15px] leading-7" />
-              ) : (
-                <button
-                  onClick={startEdit}
-                  className="text-sm text-slate-400 hover:text-slate-600"
-                >
-                  Empty — click to write…
-                </button>
-              )}
-            </div>
-          </div>
-        </main>
-
-        <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-slate-50 p-5">
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Properties</h3>
-
-          <Field label="Parent">
-            {ancestors.length === 0 ? (
-              <span className="text-slate-400">Root</span>
-            ) : (
-              <Link
-                to={`/data-room?open=${ancestors[ancestors.length - 1]._id}`}
-                className="flex items-center gap-1 text-slate-700 hover:text-slate-900 hover:underline"
-              >
-                <RiFolder3Line className="h-3.5 w-3.5 text-amber-500" />
-                <span className="truncate">{ancestors[ancestors.length - 1].name}</span>
-              </Link>
             )}
-          </Field>
+          </div>
+        </div>
+      </main>
 
-          <Field label="Created by">{creatorName}</Field>
-          <Field label="Updated">{fmtDate(file.updated_at)}</Field>
-          <Field label="Words">{wordCount(wordsValue)}</Field>
-          <Field label="Chars">{(wordsValue || "").length.toLocaleString()}</Field>
-        </aside>
-      </div>
+      <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-slate-50 p-5">
+        {editing ? (
+          <div className="mb-5 space-y-2">
+            <button
+              onClick={save}
+              disabled={saving || !dirty}
+              className="w-full rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              onClick={cancelEdit}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            {dirty && <div className="text-center text-[11px] text-slate-400">Unsaved changes</div>}
+          </div>
+        ) : (
+          <div className="mb-5 space-y-2">
+            <button
+              onClick={startEdit}
+              className="flex w-full items-center justify-center gap-1 rounded-md bg-slate-900 px-3 py-2 text-xs font-medium text-white hover:bg-slate-800"
+            >
+              <RiEditLine className="h-3.5 w-3.5" /> Edit
+            </button>
+            <button
+              onClick={download}
+              className="flex w-full items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 hover:bg-slate-50"
+            >
+              <RiDownloadLine className="h-3.5 w-3.5" /> Download
+            </button>
+          </div>
+        )}
+
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Properties</h3>
+
+        <Field label="Parent">
+          {ancestors.length === 0 ? (
+            <span className="text-slate-400">Root</span>
+          ) : (
+            <Link
+              to={`/data-room?open=${ancestors[ancestors.length - 1]._id}`}
+              className="flex items-center gap-1 text-slate-700 hover:text-slate-900 hover:underline"
+            >
+              <RiFolder3Line className="h-3.5 w-3.5 text-amber-500" />
+              <span className="truncate">{ancestors[ancestors.length - 1].name}</span>
+            </Link>
+          )}
+        </Field>
+
+        <Field label="Created by">{creatorName}</Field>
+        <Field label="Updated">{fmtDate(file.updated_at)}</Field>
+        <Field label="Words">{wordCount(wordsValue)}</Field>
+        <Field label="Chars">{(wordsValue || "").length.toLocaleString()}</Field>
+
+        <div className="mt-6 border-t border-slate-200 pt-4">
+          <button
+            onClick={remove}
+            className="flex w-full items-center justify-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50"
+          >
+            <RiDeleteBin6Line className="h-3.5 w-3.5" /> Delete file
+          </button>
+        </div>
+      </aside>
     </div>
   );
 }
