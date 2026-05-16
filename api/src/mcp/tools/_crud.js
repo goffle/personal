@@ -1,5 +1,5 @@
 const { z } = require("zod");
-const { sanitizeSearch, formatResult, formatError, resolveCaller } = require("./_shared");
+const { sanitizeSearch, formatResult, formatError, resolveCaller, withEntityUrl } = require("./_shared");
 
 /**
  * Register search/get/create/update CRUD tools for an org-scoped resource.
@@ -50,7 +50,7 @@ function registerCrudTools(server, opts) {
             .limit(params.limit || 50)
             .lean(),
         ]);
-        return formatResult({ total, count: items.length, [namePlural]: items });
+        return formatResult({ total, count: items.length, [namePlural]: items.map((i) => withEntityUrl(name, i)) });
       } catch (err) {
         return formatError(err.message);
       }
@@ -66,7 +66,7 @@ function registerCrudTools(server, opts) {
         await resolveCaller(extra);
         const item = await Model.findById(params.id).lean();
         if (!item) return formatError(`${name} not found`);
-        return formatResult({ [name]: item });
+        return formatResult({ [name]: withEntityUrl(name, item) });
       } catch (err) {
         return formatError(err.message);
       }
@@ -82,7 +82,7 @@ function registerCrudTools(server, opts) {
         try {
           const { user, organizationId } = await resolveCaller(extra);
           const item = await Model.create({ ...params, organization_id: organizationId, created_by: user._id.toString() });
-          return formatResult({ created: true, [name]: item.toObject() });
+          return formatResult({ created: true, [name]: withEntityUrl(name, item.toObject()) });
         } catch (err) {
           return formatError(err.message);
         }
@@ -100,7 +100,7 @@ function registerCrudTools(server, opts) {
           await resolveCaller(extra);
           const item = await Model.findByIdAndUpdate(params.id, { $set: params.fields }, { new: true }).lean();
           if (!item) return formatError(`${name} not found`);
-          return formatResult({ updated: true, [name]: item });
+          return formatResult({ updated: true, [name]: withEntityUrl(name, item) });
         } catch (err) {
           return formatError(err.message);
         }

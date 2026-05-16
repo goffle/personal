@@ -26,18 +26,35 @@ async function resolveCaller(extra) {
   return { user, organizationId };
 }
 
-function taskUrl(id) {
-  return `${APP_URL}/tasks/${id}`;
+const ENTITY_URL_BUILDERS = {
+  task: (id) => `${APP_URL}/tasks/${id}`,
+  chat: (id) => `${APP_URL}/chat?id=${id}`,
+  file: (id) => `${APP_URL}/data-room/${id}`,
+  agent: (id) => `${APP_URL}/agents/${id}`,
+};
+
+function entityUrl(name, id) {
+  if (!id) return null;
+  const build = ENTITY_URL_BUILDERS[name];
+  return build ? build(id) : null;
 }
-function chatUrl(id) {
-  return `${APP_URL}/chat?id=${id}`;
+
+function withEntityUrl(name, item) {
+  if (!item) return item;
+  const url = entityUrl(name, item._id);
+  return url ? { ...item, url } : item;
 }
+
+const taskUrl = (id) => entityUrl("task", id);
+const chatUrl = (id) => entityUrl("chat", id);
 
 module.exports = {
   sanitizeSearch,
   formatResult,
   formatError,
   resolveCaller,
+  entityUrl,
+  withEntityUrl,
   taskUrl,
   chatUrl,
 };
