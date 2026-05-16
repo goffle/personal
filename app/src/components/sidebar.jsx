@@ -8,6 +8,7 @@ import {
   RiBookOpenLine,
   RiPlugLine,
   RiServerLine,
+  RiCloseLine,
 } from "react-icons/ri";
 
 import useStore from "@/services/store";
@@ -23,32 +24,55 @@ const NAV = [
   { to: "/mcp", label: "MCP", icon: RiServerLine },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose }) {
   const { organization } = useStore();
 
   return (
-    <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white">
-      <div className="border-b border-slate-200 px-4 py-4">
-        <div className="text-sm font-semibold text-slate-900">Console</div>
-        <div className="mt-0.5 truncate text-xs text-slate-500">{organization?.name || "No workspace"}</div>
-      </div>
-
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-        {NAV.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            className={({ isActive }) =>
-              `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition ${
-                isActive ? "bg-slate-100 font-medium text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              }`
-            }
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 z-30 bg-slate-900/40 md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 md:static md:translate-x-0 ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-slate-900">Console</div>
+            <div className="mt-0.5 truncate text-xs text-slate-500">{organization?.name || "No workspace"}</div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
+            aria-label="Close menu"
           >
-            <Icon className="h-4 w-4 shrink-0" />
-            <span>{label}</span>
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+            <RiCloseLine className="h-5 w-5" />
+          </button>
+        </div>
+
+        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
+          {NAV.map(({ to, label, icon: Icon }) => (
+            <NavLink
+              key={to}
+              to={to}
+              onClick={onClose}
+              className={({ isActive }) =>
+                `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition ${
+                  isActive ? "bg-slate-100 font-medium text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                }`
+              }
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }

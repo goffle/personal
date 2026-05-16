@@ -64,7 +64,7 @@ export default function AgentDetail() {
   if (!agent) return <div className="p-6 text-slate-500">Agent not found.</div>;
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto max-w-6xl p-4 md:p-6">
       <div className="mb-4 flex items-center justify-between">
         <Link to="/agents" className="flex items-center gap-1 text-sm text-slate-600 hover:text-slate-900">
           <RiArrowLeftLine className="h-4 w-4" /> Back to agents
@@ -265,7 +265,7 @@ function FilesTab({ agent, patch }) {
   }
 
   return (
-    <div className="grid grid-cols-[220px_1fr] gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-[220px_1fr]">
       <aside className="rounded-lg border border-slate-200 bg-white">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Files</span>
@@ -291,7 +291,7 @@ function FilesTab({ agent, patch }) {
               </span>
               <button
                 onClick={(e) => { e.stopPropagation(); removeFile(f); }}
-                className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-slate-400 hover:text-red-600"
+                className="rounded p-0.5 text-slate-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover:opacity-100"
                 title="Delete file"
               >
                 <RiDeleteBin6Line className="h-3.5 w-3.5" />
@@ -390,7 +390,7 @@ function SkillsTab({ agent }) {
   }
 
   return (
-    <div className="grid grid-cols-[220px_1fr] gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-[220px_1fr]">
       <aside className="rounded-lg border border-slate-200 bg-white">
         <div className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Skills</span>
@@ -418,7 +418,7 @@ function SkillsTab({ agent }) {
                 </span>
                 <button
                   onClick={(e) => { e.stopPropagation(); removeSkill(s); }}
-                  className="opacity-0 group-hover:opacity-100 rounded p-0.5 text-slate-400 hover:text-red-600"
+                  className="rounded p-0.5 text-slate-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover:opacity-100"
                   title="Delete skill"
                 >
                   <RiDeleteBin6Line className="h-3.5 w-3.5" />
@@ -532,7 +532,7 @@ function SchedulesTab({ agent }) {
         </button>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         {loading ? (
           <div className="flex justify-center py-8"><Loader /></div>
         ) : crons.length === 0 ? (
@@ -542,7 +542,7 @@ function SchedulesTab({ agent }) {
               : "No schedules yet. Click \"New schedule\" to add one."}
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[680px] text-sm">
             <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-2.5">Name</th>

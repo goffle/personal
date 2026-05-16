@@ -39,7 +39,7 @@ export default function PlaceholderList({ title, resource, fields, columns }) {
   }
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto max-w-6xl p-4 md:p-6">
       <header className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
@@ -60,8 +60,8 @@ export default function PlaceholderList({ title, resource, fields, columns }) {
         />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full min-w-[480px] text-sm">
           <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
             <tr>
               {columns.map((c) => <th key={c.key} className="px-4 py-2.5">{c.label}</th>)}

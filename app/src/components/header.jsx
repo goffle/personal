@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { RiLogoutBoxRLine, RiCoinLine } from "react-icons/ri";
+import { RiLogoutBoxRLine, RiCoinLine, RiMenuLine } from "react-icons/ri";
 
 import useStore from "@/services/store";
 import API from "@/services/api";
@@ -15,7 +15,7 @@ function formatCost(usd) {
   return `$${usd.toFixed(4)}`;
 }
 
-export default function Header() {
+export default function Header({ onMenuClick }) {
   const { user, organization, setUser, setOrganization } = useStore();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -46,7 +46,15 @@ export default function Header() {
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center justify-end gap-3 border-b border-slate-200 bg-white px-4">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-3 md:px-4">
+      <button
+        onClick={onMenuClick}
+        className="-ml-1 flex h-9 w-9 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 hover:text-slate-900 md:hidden"
+        aria-label="Open menu"
+      >
+        <RiMenuLine className="h-5 w-5" />
+      </button>
+      <div className="flex-1" />
       <span
         className="rounded-md bg-slate-100 px-2 py-1 text-xs font-mono tabular-nums text-slate-600"
         title="Cumulative Anthropic API spend for this organization"

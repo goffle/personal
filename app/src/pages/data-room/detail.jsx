@@ -118,9 +118,9 @@ export default function DataRoomDetail() {
   const wordsValue = editing ? draft : content;
 
   return (
-    <div className="flex h-full overflow-hidden">
-      <main className="flex-1 overflow-auto bg-white">
-        <div className="mx-auto max-w-3xl px-8 py-10">
+    <div className="flex h-full flex-col overflow-auto md:flex-row md:overflow-hidden">
+      <main className="flex-1 bg-white md:overflow-auto">
+        <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-10">
           <nav className="mb-4 flex min-w-0 items-center gap-1 text-sm text-slate-500">
             <Link to="/data-room" className="flex items-center gap-1 hover:text-slate-900">
               <RiArrowLeftLine className="h-4 w-4" />
@@ -188,7 +188,7 @@ export default function DataRoomDetail() {
         </div>
       </main>
 
-      <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-slate-50 p-5">
+      <aside className="border-t border-slate-200 bg-slate-50 p-4 md:w-72 md:shrink-0 md:overflow-auto md:border-l md:border-t-0 md:p-5">
         {editing ? (
           <div className="mb-5 space-y-2">
             <button

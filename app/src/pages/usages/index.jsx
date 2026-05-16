@@ -86,7 +86,7 @@ export default function Usages() {
   }, [messages, chatById]);
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto max-w-6xl p-4 md:p-6">
       <header className="mb-5 flex items-center gap-3">
         <RiCoinLine className="h-6 w-6 text-slate-500" />
         <div>

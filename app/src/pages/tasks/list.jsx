@@ -70,7 +70,7 @@ export default function TaskList() {
   }, [search]);
 
   return (
-    <div className="mx-auto max-w-6xl p-6">
+    <div className="mx-auto max-w-6xl p-4 md:p-6">
       <header className="mb-5 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-slate-900">Tasks</h1>
@@ -126,12 +126,12 @@ export default function TaskList() {
 
       <div className="space-y-4">
         {!loading && groupByEntity(items).map(([entityKey, group]) => (
-          <section key={entityKey || "none"} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <section key={entityKey || "none"} className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
             <header className="flex items-center gap-2 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <span>{entityLabel(entityKey) || "No entity"}</span>
               <span className="font-normal text-slate-400">{group.length}</span>
             </header>
-            <div className="divide-y divide-slate-100">
+            <div className="min-w-[780px] divide-y divide-slate-100">
               {group.map((t) => <TaskRow key={t._id} t={t} onOpen={() => navigate(`/tasks/${t._id}`)} />)}
             </div>
           </section>

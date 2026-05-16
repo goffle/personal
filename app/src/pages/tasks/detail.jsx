@@ -197,9 +197,9 @@ export default function TaskDetail() {
   const isAgentAssignee = task.assignee_type === "agent" && task.assignee_id;
 
   return (
-    <div className="flex h-full overflow-hidden">
-      <main className="flex-1 overflow-auto bg-white">
-        <div className="mx-auto max-w-3xl px-8 py-10">
+    <div className="flex h-full flex-col overflow-auto md:flex-row md:overflow-hidden">
+      <main className="flex-1 bg-white md:overflow-auto">
+        <div className="mx-auto max-w-3xl px-4 py-6 md:px-8 md:py-10">
           <nav className="mb-4 flex min-w-0 items-center gap-1 text-sm text-slate-500">
             <Link to="/tasks" className="flex items-center gap-1 hover:text-slate-900">
               <RiArrowLeftLine className="h-4 w-4" />
@@ -290,7 +290,7 @@ export default function TaskDetail() {
                     <p className="whitespace-pre-wrap text-sm text-slate-800">{c.content}</p>
                     <button
                       onClick={() => deleteComment(c)}
-                      className="mt-1 text-xs text-slate-400 opacity-0 hover:text-red-600 group-hover:opacity-100"
+                      className="mt-1 text-xs text-slate-400 opacity-100 hover:text-red-600 md:opacity-0 md:group-hover:opacity-100"
                     >
                       Delete
                     </button>
@@ -330,7 +330,7 @@ export default function TaskDetail() {
         </main>
 
         {/* Right sidebar */}
-        <aside className="w-72 shrink-0 overflow-auto border-l border-slate-200 bg-slate-50 p-5">
+        <aside className="border-t border-slate-200 bg-slate-50 p-4 md:w-72 md:shrink-0 md:overflow-auto md:border-l md:border-t-0 md:p-5">
           {isAgentAssignee && (
             <button
               onClick={runWithAgent}
@@ -468,7 +468,7 @@ function ChecklistRow({ item, onToggle, onEdit, onCommit, onDelete }) {
       <button
         type="button"
         onClick={onDelete}
-        className="rounded p-1 text-slate-300 opacity-0 hover:bg-slate-200 hover:text-red-600 group-hover:opacity-100"
+        className="rounded p-1 text-slate-300 opacity-100 hover:bg-slate-200 hover:text-red-600 md:opacity-0 md:group-hover:opacity-100"
         title="Delete"
       >
         <RiDeleteBin6Line className="h-3.5 w-3.5" />
