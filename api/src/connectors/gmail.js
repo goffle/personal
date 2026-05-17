@@ -127,6 +127,7 @@ function summarizeMessage(message) {
   return {
     id: message.id,
     thread_id: message.threadId,
+    message_id: headerValue(message, "Message-Id") || headerValue(message, "Message-ID"),
     from: headerValue(message, "From"),
     to: headerValue(message, "To"),
     subject: headerValue(message, "Subject"),
@@ -136,11 +137,24 @@ function summarizeMessage(message) {
   };
 }
 
+function bracketedMessageId(value) {
+  if (!value) return "";
+  const trimmed = String(value).trim();
+  if (!trimmed) return "";
+  return trimmed.startsWith("<") ? trimmed : `<${trimmed}>`;
+}
+
 function encodeRfc822(message) {
   const lines = [];
   if (message.to) lines.push(`To: ${message.to}`);
   if (message.cc) lines.push(`Cc: ${message.cc}`);
   if (message.subject) lines.push(`Subject: ${message.subject}`);
+  const inReplyTo = bracketedMessageId(message.in_reply_to_message_id);
+  if (inReplyTo) {
+    lines.push(`In-Reply-To: ${inReplyTo}`);
+    const refs = message.references ? `${message.references} ${inReplyTo}` : inReplyTo;
+    lines.push(`References: ${refs}`);
+  }
   lines.push("MIME-Version: 1.0");
   lines.push("Content-Type: text/plain; charset=UTF-8");
   lines.push("");
@@ -200,7 +214,7 @@ const tools = [
   },
   {
     name: "gmail.create_draft",
-    description: "Create a Gmail draft. Use thread_id + in_reply_to_message_id when replying to an existing thread; omit them for a new outbound draft.",
+    description: "Create a Gmail draft. Use thread_id + in_reply_to_message_id when replying to an existing thread; omit them for a new outbound draft. After creating, show the recipient/subject/body to the user and wait for explicit confirmation before calling gmail.send_draft.",
     schema: {
       type: "object",
       properties: {
@@ -209,12 +223,27 @@ const tools = [
         subject: { type: "string" },
         body: { type: "string" },
         thread_id: { type: "string", description: "Optional Gmail thread id to attach the draft to." },
+        in_reply_to_message_id: {
+          type: "string",
+          description: "RFC822 Message-Id header of the message being replied to (e.g. '<CABc...@mail.gmail.com>'). Returned as `message_id` by gmail.get_thread. Required for correct threading in non-Gmail clients.",
+        },
+        references: {
+          type: "string",
+          description: "Optional pre-existing References header value to chain ancestry. The in_reply_to_message_id is appended automatically.",
+        },
       },
       required: ["body"],
     },
     async handler(connector, args) {
       const token = await getAccessToken(connector);
-      const raw = encodeRfc822({ to: args.to, cc: args.cc, subject: args.subject, body: args.body });
+      const raw = encodeRfc822({
+        to: args.to,
+        cc: args.cc,
+        subject: args.subject,
+        body: args.body,
+        in_reply_to_message_id: args.in_reply_to_message_id,
+        references: args.references,
+      });
       const payload = { message: { raw, ...(args.thread_id ? { threadId: args.thread_id } : {}) } };
       const r = await fetch(`${API_BASE}/users/me/drafts`, {
         method: "POST",
@@ -223,7 +252,96 @@ const tools = [
       });
       if (!r.ok) throw new Error(`gmail create_draft failed: ${r.status} ${await r.text()}`);
       const j = await r.json();
-      return { draft_id: j.id, message_id: j.message?.id, thread_id: j.message?.threadId };
+      return {
+        draft_id: j.id,
+        message_id: j.message?.id,
+        thread_id: j.message?.threadId,
+        preview: { to: args.to || "", cc: args.cc || "", subject: args.subject || "", body: args.body || "" },
+      };
+    },
+  },
+  {
+    name: "gmail.update_draft",
+    description: "Replace the contents of an existing Gmail draft. PUT semantics — fields you omit are cleared. Use this when the user asks to tweak a draft before sending so you don't litter the drafts folder with stale copies.",
+    schema: {
+      type: "object",
+      properties: {
+        draft_id: { type: "string" },
+        to: { type: "string" },
+        cc: { type: "string" },
+        subject: { type: "string" },
+        body: { type: "string" },
+        thread_id: { type: "string" },
+        in_reply_to_message_id: { type: "string" },
+        references: { type: "string" },
+      },
+      required: ["draft_id", "body"],
+    },
+    async handler(connector, args) {
+      const token = await getAccessToken(connector);
+      const raw = encodeRfc822({
+        to: args.to,
+        cc: args.cc,
+        subject: args.subject,
+        body: args.body,
+        in_reply_to_message_id: args.in_reply_to_message_id,
+        references: args.references,
+      });
+      const payload = { message: { raw, ...(args.thread_id ? { threadId: args.thread_id } : {}) } };
+      const r = await fetch(`${API_BASE}/users/me/drafts/${encodeURIComponent(args.draft_id)}`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) throw new Error(`gmail update_draft failed: ${r.status} ${await r.text()}`);
+      const j = await r.json();
+      return {
+        draft_id: j.id,
+        message_id: j.message?.id,
+        thread_id: j.message?.threadId,
+        preview: { to: args.to || "", cc: args.cc || "", subject: args.subject || "", body: args.body || "" },
+      };
+    },
+  },
+  {
+    name: "gmail.send_draft",
+    description: "Send an existing Gmail draft. ONLY call this after the user has reviewed the draft body and recipients and explicitly asked to send (e.g. 'send it', 'envoie', 'go'). Sent email cannot be unsent. Never chain create_draft + send_draft in the same turn — pause and confirm first.",
+    schema: {
+      type: "object",
+      properties: {
+        draft_id: { type: "string", description: "Draft id returned by gmail.create_draft (or gmail.update_draft)." },
+      },
+      required: ["draft_id"],
+    },
+    async handler(connector, args) {
+      const token = await getAccessToken(connector);
+      const r = await fetch(`${API_BASE}/users/me/drafts/send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ id: args.draft_id }),
+      });
+      if (r.status === 404) throw new Error(`gmail send_draft: draft ${args.draft_id} not found (may have been deleted or already sent)`);
+      if (!r.ok) throw new Error(`gmail send_draft failed: ${r.status} ${await r.text()}`);
+      const j = await r.json();
+      return { sent: true, message_id: j.id, thread_id: j.threadId, label_ids: j.labelIds || [] };
+    },
+  },
+  {
+    name: "gmail.delete_draft",
+    description: "Delete a Gmail draft without sending it. Use when the user discards or rewrites a draft you created.",
+    schema: {
+      type: "object",
+      properties: { draft_id: { type: "string" } },
+      required: ["draft_id"],
+    },
+    async handler(connector, args) {
+      const token = await getAccessToken(connector);
+      const r = await fetch(`${API_BASE}/users/me/drafts/${encodeURIComponent(args.draft_id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok && r.status !== 404) throw new Error(`gmail delete_draft failed: ${r.status} ${await r.text()}`);
+      return { draft_id: args.draft_id, deleted: true };
     },
   },
   {

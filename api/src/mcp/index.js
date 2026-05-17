@@ -11,12 +11,15 @@ const { registerConnectorTools } = require("./tools/connectors");
 const { registerMcpServerTools } = require("./tools/mcp_servers");
 const { registerToolTools } = require("./tools/tools");
 const { registerUserTools } = require("./tools/users");
+const { registerConnectorActionTools } = require("./tools/connector_actions");
 
 const INSTRUCTIONS = `Jeeve — personal task manager and agent orchestrator. Multi-entity work across: walego, selego, jobego, tirana, tochet, admin, other.
 
 Sprints are ISO weeks (Mon→Sun, e.g. "2026-W19") or "Backlog". Tasks can be assigned to users OR agents — agents are first-class assignees. Agents own skills (markdown playbooks) and run inside chats; cron_jobs trigger agent chats on a schedule.
 
-Call \`whoami\` first to get organization_id, entities, and current_sprint. Use \`external_id\` on create_task for idempotent migrations from Notion/Linear/etc.`;
+Call \`whoami\` first to get organization_id, entities, and current_sprint. Use \`external_id\` on create_task for idempotent migrations from Notion/Linear/etc.
+
+Connector actions: if a \`gmail\` connector is connected to the workspace, use the \`gmail_*\` tools (search_threads, get_thread, create_draft, update_draft, send_draft, delete_draft, mark_read) to read and compose mail. If a \`google_calendar\` connector is connected, use \`calendar_*\` (list_calendars, list_events, get_event, create_event, update_event, delete_event). When multiple connectors of the same kind exist in the workspace, pass \`account_email\` to disambiguate. NEVER chain \`gmail_create_draft\` + \`gmail_send_draft\` in the same turn — always show the draft to the user and wait for explicit confirmation before sending.`;
 
 function createMcpServer() {
   const server = new McpServer({ name: "jeeve", version: "1.0.0" }, { instructions: INSTRUCTIONS });
@@ -32,6 +35,7 @@ function createMcpServer() {
   registerMcpServerTools(server);
   registerToolTools(server);
   registerUserTools(server);
+  registerConnectorActionTools(server);
 
   return server;
 }
