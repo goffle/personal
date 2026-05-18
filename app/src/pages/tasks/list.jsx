@@ -16,6 +16,19 @@ const PRIORITY_CHIPS = {
   high: "bg-red-100 text-red-800",
 };
 
+const STATUS_ORDER = { todo: 0, doing: 0, waiting: 1, done: 2 };
+const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
+
+function sortTasks(a, b) {
+  const sa = STATUS_ORDER[a.status] ?? 3;
+  const sb = STATUS_ORDER[b.status] ?? 3;
+  if (sa !== sb) return sa - sb;
+  const pa = PRIORITY_ORDER[a.priority] ?? 3;
+  const pb = PRIORITY_ORDER[b.priority] ?? 3;
+  if (pa !== pb) return pa - pb;
+  return (a.reference || "").localeCompare(b.reference || "");
+}
+
 function groupByEntity(items) {
   const groups = new Map();
   for (const t of items) {
@@ -23,6 +36,7 @@ function groupByEntity(items) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(t);
   }
+  for (const list of groups.values()) list.sort(sortTasks);
   return [...groups.entries()].sort(([a], [b]) => {
     if (!a && !b) return 0;
     if (!a) return 1;
