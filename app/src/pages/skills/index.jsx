@@ -23,7 +23,7 @@ const ENTRYPOINT = "SKILL.md";
 
 function normalizeFiles(skill) {
   if (skill.files && skill.files.length) return skill.files;
-  return [{ path: ENTRYPOINT, body_md: skill.body_md || "" }];
+  return [{ path: ENTRYPOINT, body_md: "" }];
 }
 
 export default function Skills() {
@@ -54,7 +54,6 @@ export default function Skills() {
     const r = await API.post("/skill", {
       name: "Untitled skill",
       description: "",
-      body_md: "",
       files: [{ path: ENTRYPOINT, body_md: "" }],
       organization_id: organization._id,
     });
@@ -251,8 +250,7 @@ function Detail({ skills, agents, onChange, onDelete }) {
   }
 
   async function saveFiles(nextFiles) {
-    const entry = nextFiles.find((f) => f.path === ENTRYPOINT);
-    await save({ files: nextFiles, body_md: entry?.body_md || "" });
+    await save({ files: nextFiles });
   }
 
   async function remove() {

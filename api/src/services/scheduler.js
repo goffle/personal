@@ -2,10 +2,13 @@ const cron = require("node-cron");
 
 const CronJob = require("../models/cron-job");
 const Skill = require("../models/skill");
+const File = require("../models/file");
 const Agent = require("../models/agent");
 const Chat = require("../models/chat");
 const ChatMessage = require("../models/chat-message");
 const { runAgentTurn } = require("./chat-runner");
+
+const SKILL_ENTRYPOINT = "SKILL.md";
 
 const tasks = new Map();
 
@@ -30,11 +33,12 @@ async function runJob(jobId) {
     });
     result.chat_id = chat._id.toString();
 
+    const entryFile = await File.findOne({ skill_id: skill._id.toString(), name: SKILL_ENTRYPOINT }).lean();
     await ChatMessage.create({
       chat_id: chat._id.toString(),
       organization_id: job.organization_id,
       role: "user",
-      content: skill.body_md || skill.description || skill.name,
+      content: entryFile?.content_md || skill.description || skill.name,
     });
 
     await runAgentTurn({

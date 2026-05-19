@@ -352,9 +352,11 @@ function SkillsTab({ agent }) {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [agent._id]);
 
+  const selectedEntryBody = selected?.files?.find((f) => f.path === "SKILL.md")?.body_md || "";
+
   useEffect(() => {
-    setDraft(selected ? { name: selected.name, description: selected.description || "", body_md: selected.body_md || "" } : null);
-  }, [selectedId, selected?.name, selected?.description, selected?.body_md]);
+    setDraft(selected ? { name: selected.name, description: selected.description || "", body_md: selectedEntryBody } : null);
+  }, [selectedId, selected?.name, selected?.description, selectedEntryBody]);
 
   async function addSkill() {
     const name = prompt("Skill name (e.g. morning-brief):");
@@ -370,7 +372,13 @@ function SkillsTab({ agent }) {
 
   async function saveSkill() {
     if (!selected || !draft) return;
-    const r = await API.put(`/skill/${selected._id}`, draft);
+    const others = (selected.files || []).filter((f) => f.path !== "SKILL.md");
+    const nextFiles = [{ path: "SKILL.md", body_md: draft.body_md }, ...others];
+    const r = await API.put(`/skill/${selected._id}`, {
+      name: draft.name,
+      description: draft.description,
+      files: nextFiles,
+    });
     if (r.ok) {
       setSkills((prev) => prev.map((s) => (s._id === selected._id ? r.data : s)));
       toast.success("Saved");

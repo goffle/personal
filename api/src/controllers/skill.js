@@ -6,13 +6,14 @@ const File = require("../models/file");
 
 const SERVER_ERROR = "SERVER_ERROR";
 const NOT_FOUND = "NOT_FOUND";
+const ENTRYPOINT = "SKILL.md";
 
 const router = express.Router();
 const auth = passport.authenticate(["user", "admin"], { session: false });
 
-// Files belonging to skills live as top-level File docs with parent_kind='skill'.
-// The REST contract still exposes them as an embedded `files: [{_id, path, body_md}]`
-// array so the skills page in the app keeps working unchanged.
+// Files belonging to skills are stored as top-level File docs with
+// skill_id = <skill._id>. The REST contract still exposes them as an embedded
+// `files: [{_id, path, body_md}]` array so the skills page stays happy.
 
 function fileToSkillFile(file) {
   return { _id: file._id, path: file.name, body_md: file.content_md || "" };
@@ -20,7 +21,7 @@ function fileToSkillFile(file) {
 
 async function hydrateOne(skill) {
   if (!skill) return skill;
-  const files = await File.find({ parent_kind: "skill", parent_id: skill._id.toString() }).sort({ name: 1 }).lean();
+  const files = await File.find({ skill_id: skill._id.toString() }).sort({ name: 1 }).lean();
   const obj = typeof skill.toObject === "function" ? skill.toObject() : { ...skill };
   obj.files = files.map(fileToSkillFile);
   return obj;
@@ -29,28 +30,34 @@ async function hydrateOne(skill) {
 async function hydrateMany(skills) {
   if (!skills.length) return skills;
   const ids = skills.map((s) => s._id.toString());
-  const files = await File.find({ parent_kind: "skill", parent_id: { $in: ids } }).sort({ name: 1 }).lean();
-  const byParent = new Map();
+  const files = await File.find({ skill_id: { $in: ids } }).sort({ name: 1 }).lean();
+  const bySkill = new Map();
   for (const f of files) {
-    if (!byParent.has(f.parent_id)) byParent.set(f.parent_id, []);
-    byParent.get(f.parent_id).push(fileToSkillFile(f));
+    if (!bySkill.has(f.skill_id)) bySkill.set(f.skill_id, []);
+    bySkill.get(f.skill_id).push(fileToSkillFile(f));
   }
   return skills.map((s) => {
     const obj = typeof s.toObject === "function" ? s.toObject() : { ...s };
-    obj.files = byParent.get(s._id.toString()) || [];
+    obj.files = bySkill.get(s._id.toString()) || [];
     return obj;
   });
 }
 
 // Diff incoming {path, body_md}[] against current File docs for this skill.
-// Upsert by path, delete any paths no longer present.
+// Upsert by path, delete any paths no longer present. Always ensures SKILL.md
+// exists so freshly created skills are never empty.
 async function syncSkillFiles({ skill, incoming, user }) {
   const skillId = skill._id.toString();
-  const existing = await File.find({ parent_kind: "skill", parent_id: skillId });
+  const existing = await File.find({ skill_id: skillId });
   const byPath = new Map(existing.map((f) => [f.name, f]));
 
+  const items = Array.isArray(incoming) ? incoming.slice() : [];
+  if (!items.some((it) => (it?.path || "").trim() === ENTRYPOINT)) {
+    items.unshift({ path: ENTRYPOINT, body_md: "" });
+  }
+
   const seen = new Set();
-  for (const item of incoming) {
+  for (const item of items) {
     const path = (item?.path || "").trim();
     if (!path) continue;
     if (seen.has(path)) continue;
@@ -66,8 +73,7 @@ async function syncSkillFiles({ skill, incoming, user }) {
       await File.create({
         name: path,
         kind: "file",
-        parent_kind: "skill",
-        parent_id: skillId,
+        skill_id: skillId,
         content_md: body,
         organization_id: skill.organization_id,
         created_by: user?._id?.toString(),
@@ -119,9 +125,7 @@ router.post("/", auth, async (req, res) => {
   try {
     const { files, ...skillFields } = req.body || {};
     const skill = await Skill.create({ ...skillFields, created_by: req.user._id.toString() });
-    if (Array.isArray(files)) {
-      await syncSkillFiles({ skill, incoming: files, user: req.user });
-    }
+    await syncSkillFiles({ skill, incoming: files, user: req.user });
     const data = await hydrateOne(skill);
     return res.status(200).send({ ok: true, data });
   } catch (err) {
@@ -150,7 +154,7 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const skill = await Skill.findByIdAndDelete(req.params.id);
     if (!skill) return res.status(404).send({ ok: false, code: NOT_FOUND });
-    await File.deleteMany({ parent_kind: "skill", parent_id: req.params.id });
+    await File.deleteMany({ skill_id: req.params.id });
     return res.status(200).send({ ok: true });
   } catch (err) {
     return res.status(500).send({ ok: false, code: SERVER_ERROR });

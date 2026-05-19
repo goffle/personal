@@ -7,10 +7,18 @@
 
 const Task = require("../models/task");
 const Skill = require("../models/skill");
+const File = require("../models/file");
 const Agent = require("../models/agent");
 const Chat = require("../models/chat");
 const Connector = require("../models/connector");
 const { getDriver } = require("../connectors");
+
+const SKILL_ENTRYPOINT = "SKILL.md";
+
+async function loadSkillEntrypoint(skillId) {
+  const file = await File.findOne({ skill_id: skillId.toString(), name: SKILL_ENTRYPOINT }).lean();
+  return file?.content_md || "";
+}
 
 const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
 const STATUSES = ["todo", "doing", "waiting", "done"];
@@ -30,7 +38,8 @@ const INTERNAL_TOOLS = [
       if (agent?._id) q.agent_id = agent._id.toString();
       const skill = await Skill.findOne(q).lean();
       if (!skill) throw new Error(`skill "${input.name}" not found`);
-      return { name: skill.name, description: skill.description || "", body_md: skill.body_md || "" };
+      const body_md = await loadSkillEntrypoint(skill._id);
+      return { name: skill.name, description: skill.description || "", body_md };
     },
   },
   {

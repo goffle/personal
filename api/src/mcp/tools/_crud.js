@@ -13,9 +13,25 @@ const { sanitizeSearch, formatResult, formatError, resolveCaller, withEntityUrl 
  * @param {object}        opts.createShape  zod object literal (keys -> z schemas) used for create
  * @param {object}        opts.updateShape  zod object literal used for update (snake_case)
  * @param {object}        [opts.extraFilters] map of filter name -> { type, field } applied if present
+ * @param {(params, ctx) => Promise<object|void>} [opts.beforeCreate]
+ *   Hook run before Model.create. Receives the raw params and { organizationId }.
+ *   May return a (possibly mutated) params object, or throw to reject.
+ * @param {(args, ctx) => Promise<object|void>} [opts.beforeUpdate]
+ *   Hook run before findByIdAndUpdate. Receives { id, fields } and { organizationId }.
+ *   May return { id, fields } with adjusted values, or throw to reject.
  */
 function registerCrudTools(server, opts) {
-  const { name, namePlural, Model, searchFields = ["name"], createShape, updateShape, extraFilters = {} } = opts;
+  const {
+    name,
+    namePlural,
+    Model,
+    searchFields = ["name"],
+    createShape,
+    updateShape,
+    extraFilters = {},
+    beforeCreate,
+    beforeUpdate,
+  } = opts;
 
   const searchParams = {
     search: z.string().optional().describe(`Text search on ${searchFields.join(", ")}`),
@@ -81,7 +97,12 @@ function registerCrudTools(server, opts) {
       async (params, extra) => {
         try {
           const { user, organizationId } = await resolveCaller(extra);
-          const item = await Model.create({ ...params, organization_id: organizationId, created_by: user._id.toString() });
+          let payload = params;
+          if (beforeCreate) {
+            const next = await beforeCreate(payload, { organizationId });
+            if (next) payload = next;
+          }
+          const item = await Model.create({ ...payload, organization_id: organizationId, created_by: user._id.toString() });
           return formatResult({ created: true, [name]: withEntityUrl(name, item.toObject()) });
         } catch (err) {
           return formatError(err.message);
@@ -97,8 +118,13 @@ function registerCrudTools(server, opts) {
       { id: z.string(), fields: z.object(updateShape).describe("Fields to update (snake_case)") },
       async (params, extra) => {
         try {
-          await resolveCaller(extra);
-          const item = await Model.findByIdAndUpdate(params.id, { $set: params.fields }, { new: true }).lean();
+          const { organizationId } = await resolveCaller(extra);
+          let args = params;
+          if (beforeUpdate) {
+            const next = await beforeUpdate(args, { organizationId });
+            if (next) args = next;
+          }
+          const item = await Model.findByIdAndUpdate(args.id, { $set: args.fields }, { new: true }).lean();
           if (!item) return formatError(`${name} not found`);
           return formatResult({ updated: true, [name]: withEntityUrl(name, item) });
         } catch (err) {
