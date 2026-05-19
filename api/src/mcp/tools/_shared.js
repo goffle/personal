@@ -15,15 +15,27 @@ function formatError(message) {
 
 /**
  * Resolve the authenticated user from the MCP `extra.authInfo` payload.
- * Returns { user, organizationId } — organizationId defaults to the user's first org.
+ * Returns { user, organizationId, accessToken } — organizationId is pinned on the
+ * access token at consent time and can be switched with `set_active_organization`.
+ * Legacy tokens issued before multi-org pinning fall back to the user's first org.
  */
 async function resolveCaller(extra) {
   const user_id = extra?.authInfo?.user_id;
   if (!user_id) throw new Error("Unauthenticated");
   const user = await User.findById(user_id).lean();
   if (!user) throw new Error("User not found");
-  const organizationId = user.organisations?.[0]?.id || null;
-  return { user, organizationId };
+
+  const orgs = user.organisations || [];
+  if (!orgs.length) throw new Error("User has no organisation");
+
+  const pinned = extra?.authInfo?.organization_id || null;
+  let organizationId = pinned;
+  if (organizationId && !orgs.some((o) => o.id === organizationId)) {
+    throw new Error(`User is no longer a member of organisation ${organizationId}. Call list_my_organizations and set_active_organization to choose another.`);
+  }
+  if (!organizationId) organizationId = orgs[0].id;
+
+  return { user, organizationId, accessToken: extra?.authInfo?.token || null };
 }
 
 const ENTITY_URL_BUILDERS = {

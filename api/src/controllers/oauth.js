@@ -23,6 +23,7 @@ router.get("/authorize/client", userAuth, async (req, res) => {
       logo_uri: client.logo_uri,
       client_uri: client.client_uri,
       scope: client.scope,
+      organisations: (req.user.organisations || []).map((o) => ({ id: o.id, name: o.name, role: o.role })),
     });
   } catch (err) {
     console.error(err);
@@ -32,7 +33,7 @@ router.get("/authorize/client", userAuth, async (req, res) => {
 
 router.post("/authorize/grant", userAuth, async (req, res) => {
   try {
-    const { client_id, redirect_uri, code_challenge, code_challenge_method, state, scope, resource, response_type } = req.body;
+    const { client_id, redirect_uri, code_challenge, code_challenge_method, state, scope, resource, response_type, organization_id } = req.body;
 
     if (response_type && response_type !== "code") return res.status(400).send({ ok: false, code: "unsupported_response_type" });
     if (code_challenge_method && code_challenge_method !== "S256") return res.status(400).send({ ok: false, code: "invalid_code_challenge_method" });
@@ -42,6 +43,14 @@ router.post("/authorize/grant", userAuth, async (req, res) => {
     if (!client) return res.status(404).send({ ok: false, code: "client_not_found" });
     if (!client.redirect_uris?.includes(redirect_uri)) return res.status(400).send({ ok: false, code: "redirect_uri_mismatch" });
 
+    const orgs = req.user.organisations || [];
+    if (!orgs.length) return res.status(400).send({ ok: false, code: "no_organisation" });
+    let pickedOrgId = organization_id || null;
+    if (pickedOrgId && !orgs.some((o) => o.id === pickedOrgId)) {
+      return res.status(400).send({ ok: false, code: "organisation_not_member" });
+    }
+    if (!pickedOrgId) pickedOrgId = orgs[0].id;
+
     const code = randomUUID();
     const scopes = scope ? scope.split(" ").filter(Boolean) : [];
 
@@ -50,6 +59,7 @@ router.post("/authorize/grant", userAuth, async (req, res) => {
       token: code,
       client_id,
       user_id: req.user._id.toString(),
+      organization_id: pickedOrgId,
       scopes,
       expires_at: new Date(Date.now() + 10 * 60 * 1000),
       code_challenge,

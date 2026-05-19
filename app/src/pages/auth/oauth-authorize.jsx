@@ -18,6 +18,8 @@ export default function OauthAuthorize() {
 
   const [checking, setChecking] = useState(!user);
   const [client, setClient] = useState(null);
+  const [organisations, setOrganisations] = useState([]);
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
   const [clientError, setClientError] = useState(null);
   const [approving, setApproving] = useState(false);
   const [denying, setDenying] = useState(false);
@@ -58,6 +60,9 @@ export default function OauthAuthorize() {
           return;
         }
         setClient(r);
+        const orgs = r.organisations || [];
+        setOrganisations(orgs);
+        setSelectedOrgId(orgs[0]?.id || null);
       } catch (e) {
         setClientError(e?.message || "Could not load client info");
       }
@@ -80,6 +85,7 @@ export default function OauthAuthorize() {
         state: params.state,
         scope: params.scope,
         resource: params.resource,
+        organization_id: selectedOrgId,
       });
       if (r.redirect_url) window.location.href = r.redirect_url;
       else {
@@ -161,6 +167,27 @@ export default function OauthAuthorize() {
           <div className="text-xs text-slate-500">{user.email}</div>
         </div>
       </div>
+
+      {organisations.length > 1 && (
+        <div className="mb-6">
+          <label htmlFor="oauth-org" className="mb-1.5 block text-xs font-medium text-slate-600">
+            Workspace to authorize
+          </label>
+          <select
+            id="oauth-org"
+            value={selectedOrgId || ""}
+            onChange={(e) => setSelectedOrgId(e.target.value)}
+            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none"
+          >
+            {organisations.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-slate-500">
+            {client.client_name} will only access this workspace. You can switch later from the integration.
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3">
         <button

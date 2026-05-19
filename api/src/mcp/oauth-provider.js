@@ -92,6 +92,7 @@ class MongoOAuthProvider {
         token: accessToken,
         client_id: client.client_id,
         user_id: codeDoc.user_id,
+        organization_id: codeDoc.organization_id,
         scopes: codeDoc.scopes,
         expires_at: new Date(Date.now() + 3600 * 1000),
         resource: resource?.href,
@@ -102,6 +103,7 @@ class MongoOAuthProvider {
         token: refreshToken,
         client_id: client.client_id,
         user_id: codeDoc.user_id,
+        organization_id: codeDoc.organization_id,
         scopes: codeDoc.scopes,
         expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000),
         resource: resource?.href,
@@ -137,6 +139,7 @@ class MongoOAuthProvider {
         token: newAccessToken,
         client_id: client.client_id,
         user_id: refreshDoc.user_id,
+        organization_id: refreshDoc.organization_id,
         scopes: effectiveScopes,
         expires_at: new Date(Date.now() + 3600 * 1000),
         resource: resource?.href,
@@ -147,6 +150,7 @@ class MongoOAuthProvider {
         token: newRefreshToken,
         client_id: client.client_id,
         user_id: refreshDoc.user_id,
+        organization_id: refreshDoc.organization_id,
         scopes: effectiveScopes,
         expires_at: new Date(Date.now() + 30 * 24 * 3600 * 1000),
         resource: resource?.href,
@@ -176,6 +180,7 @@ class MongoOAuthProvider {
       expiresAt: Math.floor(doc.expires_at.getTime() / 1000),
       resource: doc.resource ? new URL(doc.resource) : undefined,
       user_id: doc.user_id,
+      organization_id: doc.organization_id || null,
     };
   }
 

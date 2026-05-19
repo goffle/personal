@@ -5,6 +5,7 @@ const OAuthTokenSchema = new mongoose.Schema({
   token: { type: String, required: true, unique: true, index: true },
   client_id: { type: String, required: true, index: true },
   user_id: { type: String, required: true, index: true },
+  organization_id: { type: String, index: true },
 
   scopes: { type: [String], default: [] },
   expires_at: { type: Date, required: true },

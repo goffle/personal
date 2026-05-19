@@ -1,5 +1,6 @@
 const { z } = require("zod");
 const Task = require("../../models/task");
+const OAuthToken = require("../../models/oauth-token");
 const { formatResult, formatError, resolveCaller } = require("./_shared");
 
 const ENTITIES = ["walego", "selego", "jobego", "tirana", "tochet", "admin", "other"];
@@ -61,7 +62,7 @@ function sprintFromDate(date) {
 function registerWorkspaceTools(server) {
   server.tool(
     "whoami",
-    "Return the authenticated user and workspace context. Call first to discover organization_id, available entities, current_sprint, and the user's identity before creating or searching tasks. Returns: user_id, email, firstname, lastname, organization_id, organization_name, role, entities_available, current_sprint (ISO week name like '2026-W19'). Example: call with no args.",
+    "Return the authenticated user and the active workspace context. Call first to discover organization_id, available entities, current_sprint, and the user's identity. The active organization_id is pinned on the access token at consent time; all other tools operate on this workspace. Returns: user_id, email, firstname, lastname, organization_id (active), organization_name, role, organisations (full list user belongs to with active flag), entities_available, current_sprint. To switch workspaces, call set_active_organization.",
     {},
     async (_params, extra) => {
       try {
@@ -75,8 +76,71 @@ function registerWorkspaceTools(server) {
           organization_id: organizationId,
           organization_name: org?.name || null,
           role: org?.role || null,
+          organisations: (user.organisations || []).map((o) => ({
+            id: o.id,
+            name: o.name,
+            role: o.role,
+            active: o.id === organizationId,
+          })),
           entities_available: ENTITIES,
           current_sprint: sprintFromDate(new Date()),
+        });
+      } catch (err) {
+        return formatError(err.message);
+      }
+    },
+  );
+
+  server.tool(
+    "list_my_organizations",
+    "List every organisation the calling user belongs to. Use this to discover candidate organization_ids before calling set_active_organization. Returns array of { id, name, role, active }.",
+    {},
+    async (_params, extra) => {
+      try {
+        const { user, organizationId } = await resolveCaller(extra);
+        return formatResult({
+          organisations: (user.organisations || []).map((o) => ({
+            id: o.id,
+            name: o.name,
+            role: o.role,
+            active: o.id === organizationId,
+          })),
+        });
+      } catch (err) {
+        return formatError(err.message);
+      }
+    },
+  );
+
+  server.tool(
+    "set_active_organization",
+    "Switch the workspace this MCP session operates on. Pins organization_id onto the caller's access token and matching refresh token; subsequent tool calls (search_tasks, create_chat, etc.) will route to the new workspace. The caller must be a member of the target organisation. Example: {organization_id:'org_abc123'}.",
+    { organization_id: z.string().describe("Target organisation id. Use list_my_organizations to discover valid ids.") },
+    async (params, extra) => {
+      try {
+        const { user, accessToken } = await resolveCaller(extra);
+        if (!accessToken) return formatError("No access token in context");
+        const orgs = user.organisations || [];
+        const target = orgs.find((o) => o.id === params.organization_id);
+        if (!target) return formatError(`Not a member of organisation ${params.organization_id}. Call list_my_organizations.`);
+
+        const current = await OAuthToken.findOne({ token: accessToken, type: "access_token" }).lean();
+        if (!current) return formatError("Access token not found");
+
+        await OAuthToken.updateMany(
+          {
+            user_id: user._id.toString(),
+            client_id: current.client_id,
+            type: { $in: ["access_token", "refresh_token"] },
+          },
+          { $set: { organization_id: target.id } },
+        );
+
+        return formatResult({
+          switched: true,
+          organization_id: target.id,
+          organization_name: target.name,
+          role: target.role,
         });
       } catch (err) {
         return formatError(err.message);
