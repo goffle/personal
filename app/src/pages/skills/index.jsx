@@ -233,7 +233,7 @@ function Detail({ skills, agents, onChange, onDelete }) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-8 py-8">
+    <div className="px-8 py-8">
       <div className="mb-6 flex items-start gap-3">
         <InlineText
           value={skill.name}
@@ -347,14 +347,14 @@ function InlineText({ value, onCommit, className = "", inputClassName = "", plac
 
   if (multiline) {
     return (
-      <textarea
+      <AutoGrowTextarea
         autoFocus
-        rows={3}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         placeholder={placeholder}
         className={inputClassName}
+        minRows={3}
       />
     );
   }
@@ -377,21 +377,47 @@ function InlineText({ value, onCommit, className = "", inputClassName = "", plac
 
 function BodyEditor({ value, onCommit }) {
   const [draft, setDraft] = useState(value || "");
-  const ref = useRef(null);
 
   useEffect(() => {
     setDraft(value || "");
   }, [value]);
 
   return (
-    <textarea
-      ref={ref}
+    <AutoGrowTextarea
       autoFocus
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => { if (draft !== (value || "")) onCommit(draft); }}
       placeholder="Write the skill body in Markdown…"
-      className="block min-h-[300px] w-full resize-y border-0 px-4 py-4 font-mono text-sm leading-relaxed outline-none focus:ring-0"
+      className="block w-full resize-none border-0 px-4 py-4 font-mono text-sm leading-relaxed outline-none focus:ring-0"
+      minRows={12}
+    />
+  );
+}
+
+function AutoGrowTextarea({ value, minRows = 3, className = "", ...rest }) {
+  const ref = useRef(null);
+
+  function resize(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }
+
+  useEffect(() => {
+    resize(ref.current);
+  }, [value]);
+
+  return (
+    <textarea
+      ref={(el) => {
+        ref.current = el;
+        resize(el);
+      }}
+      value={value}
+      rows={minRows}
+      className={className}
+      {...rest}
     />
   );
 }
