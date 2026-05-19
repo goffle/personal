@@ -33,7 +33,9 @@ async function runJob(jobId) {
     });
     result.chat_id = chat._id.toString();
 
-    const entryFile = await File.findOne({ skill_id: skill._id.toString(), name: SKILL_ENTRYPOINT }).lean();
+    const entryFile = skill.folder_id
+      ? await File.findOne({ parent_id: skill.folder_id, name: SKILL_ENTRYPOINT }).lean()
+      : null;
     await ChatMessage.create({
       chat_id: chat._id.toString(),
       organization_id: job.organization_id,

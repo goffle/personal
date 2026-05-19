@@ -1,21 +1,93 @@
 const { z } = require("zod");
 const Skill = require("../../models/skill");
 const File = require("../../models/file");
+const { ensureSkillsRoot } = require("../../services/skill-folders");
 const { sanitizeSearch, formatResult, formatError, resolveCaller } = require("./_shared");
 
-// A skill's content lives in File docs with skill_id=<skill._id>.
-// Entrypoint is the file named "SKILL.md"; everything else is reference material.
-// We hydrate {path, body_md} pairs so MCP callers and the web UI see one shape.
+// A skill's files live as regular File docs under skill.folder_id (sub-folders
+// allowed, real File docs of kind:"folder"). We rebuild a flat {path, body_md}
+// list for callers so they don't have to walk the tree.
 
 const ENTRYPOINT = "SKILL.md";
 
-function fileToSkillFile(f) {
-  return { _id: f._id, path: f.name, body_md: f.content_md || "" };
+async function listDescendants(rootId) {
+  const acc = [];
+  const frontier = [rootId];
+  while (frontier.length) {
+    const next = [];
+    const kids = await File.find({ parent_id: { $in: frontier } }).lean();
+    for (const k of kids) {
+      acc.push(k);
+      if (k.kind === "folder") next.push(k._id.toString());
+    }
+    frontier.length = 0;
+    frontier.push(...next);
+  }
+  return acc;
 }
 
-async function hydrateFiles(skillId) {
-  const files = await File.find({ skill_id: skillId.toString() }).sort({ name: 1 }).lean();
-  return files.map(fileToSkillFile);
+function buildPaths(rootId, descendants) {
+  const byId = new Map(descendants.map((d) => [d._id.toString(), d]));
+  function pathOf(node) {
+    const segments = [node.name];
+    let cur = node;
+    while (cur.parent_id && cur.parent_id !== rootId) {
+      cur = byId.get(cur.parent_id);
+      if (!cur) break;
+      segments.unshift(cur.name);
+    }
+    return segments.join("/");
+  }
+  return descendants
+    .filter((d) => d.kind === "file")
+    .map((f) => ({ _id: f._id, path: pathOf(f), body_md: f.content_md || "" }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function hydrateFiles(skill) {
+  if (!skill?.folder_id) return [];
+  const descendants = await listDescendants(skill.folder_id);
+  return buildPaths(skill.folder_id, descendants);
+}
+
+// Find skill _ids whose tree contains a file matching `regex`. Done by mapping
+// each matching File up its parent chain to a root folder; if that root folder
+// is a known skill.folder_id, that skill matches.
+async function skillIdsMatchingContent({ organizationId, regex }) {
+  const skills = await Skill.find({ organization_id: organizationId }, { _id: 1, folder_id: 1 }).lean();
+  const folderToSkill = new Map();
+  for (const s of skills) {
+    if (s.folder_id) folderToSkill.set(s.folder_id, s._id.toString());
+  }
+  if (folderToSkill.size === 0) return [];
+
+  const matches = await File.find(
+    { organization_id: organizationId, kind: "file", content_md: { $regex: regex, $options: "i" } },
+    { _id: 1, parent_id: 1 },
+  ).lean();
+  if (!matches.length) return [];
+
+  // Walk each match up to its top-most ancestor. Use a memoized lookup.
+  const parentCache = new Map();
+  async function getParent(id) {
+    if (parentCache.has(id)) return parentCache.get(id);
+    const node = await File.findById(id, { parent_id: 1 }).lean();
+    const p = node?.parent_id || null;
+    parentCache.set(id, p);
+    return p;
+  }
+  const hitSkills = new Set();
+  for (const m of matches) {
+    let cur = m.parent_id;
+    while (cur) {
+      if (folderToSkill.has(cur)) {
+        hitSkills.add(folderToSkill.get(cur));
+        break;
+      }
+      cur = await getParent(cur);
+    }
+  }
+  return Array.from(hitSkills);
 }
 
 function registerSkillTools(server) {
@@ -44,14 +116,12 @@ function registerSkillTools(server) {
         if (params.category) query.category = params.category;
 
         if (params.content_search) {
-          const re = { $regex: sanitizeSearch(params.content_search), $options: "i" };
-          const matchingSkillIds = await File.distinct("skill_id", {
-            organization_id: organizationId,
-            skill_id: { $ne: null },
-            content_md: re,
+          const ids = await skillIdsMatchingContent({
+            organizationId,
+            regex: sanitizeSearch(params.content_search),
           });
-          if (!matchingSkillIds.length) return formatResult({ total: 0, count: 0, skills: [] });
-          query._id = { $in: matchingSkillIds };
+          if (!ids.length) return formatResult({ total: 0, count: 0, skills: [] });
+          query._id = { $in: ids };
         }
 
         const [total, items] = await Promise.all([
@@ -63,21 +133,13 @@ function registerSkillTools(server) {
             .lean(),
         ]);
 
-        let filesBySkill = new Map();
-        if (params.include_files && items.length) {
-          const ids = items.map((s) => s._id.toString());
-          const files = await File.find({ skill_id: { $in: ids } }).sort({ name: 1 }).lean();
-          for (const f of files) {
-            if (!filesBySkill.has(f.skill_id)) filesBySkill.set(f.skill_id, []);
-            filesBySkill.get(f.skill_id).push(fileToSkillFile(f));
-          }
-        }
-
-        const skills = items.map((s) => {
-          const out = { ...s };
-          if (params.include_files) out.files = filesBySkill.get(s._id.toString()) || [];
-          return out;
-        });
+        const skills = await Promise.all(
+          items.map(async (s) => {
+            const out = { ...s };
+            if (params.include_files) out.files = await hydrateFiles(s);
+            return out;
+          }),
+        );
         return formatResult({ total, count: skills.length, skills });
       } catch (err) {
         return formatError(err.message);
@@ -87,14 +149,14 @@ function registerSkillTools(server) {
 
   server.tool(
     "get_skill",
-    "Get a skill by ID. Returns the skill plus its files: [{_id, path, body_md}] (hydrated from the File collection). SKILL.md is the entrypoint.",
+    "Get a skill by ID. Returns the skill plus its files: [{_id, path, body_md}] (hydrated from the File tree under skill.folder_id). SKILL.md is the entrypoint.",
     { id: z.string() },
     async (params, extra) => {
       try {
         await resolveCaller(extra);
         const skill = await Skill.findById(params.id).lean();
         if (!skill) return formatError("skill not found");
-        skill.files = await hydrateFiles(skill._id);
+        skill.files = await hydrateFiles(skill);
         return formatResult({ skill });
       } catch (err) {
         return formatError(err.message);
@@ -108,7 +170,7 @@ function registerSkillTools(server) {
     {
       name: z.string(),
       description: z.string().optional(),
-      body_md: z.string().optional().describe("Initial content for SKILL.md (the entrypoint). Add more files via create_file with skill_id."),
+      body_md: z.string().optional().describe("Initial content for SKILL.md (the entrypoint). Add more files via create_file with parent_id=<skill.folder_id>."),
       category: z.string().optional(),
       agent_id: z.string().optional().describe("ID of the agent this skill belongs to"),
     },
@@ -116,17 +178,33 @@ function registerSkillTools(server) {
       try {
         const { user, organizationId } = await resolveCaller(extra);
         const { body_md, ...skillFields } = params;
-        const skill = await Skill.create({ ...skillFields, organization_id: organizationId, created_by: user._id.toString() });
+        const skillsRootId = await ensureSkillsRoot({
+          organization_id: organizationId,
+          created_by: user._id.toString(),
+        });
+        const folder = await File.create({
+          name: skillFields.name,
+          kind: "folder",
+          parent_id: skillsRootId,
+          organization_id: organizationId,
+          created_by: user._id.toString(),
+        });
+        const skill = await Skill.create({
+          ...skillFields,
+          folder_id: folder._id.toString(),
+          organization_id: organizationId,
+          created_by: user._id.toString(),
+        });
         await File.create({
           name: ENTRYPOINT,
           kind: "file",
-          skill_id: skill._id.toString(),
+          parent_id: folder._id.toString(),
           content_md: body_md || "",
           organization_id: organizationId,
           created_by: user._id.toString(),
         });
         const obj = skill.toObject();
-        obj.files = await hydrateFiles(skill._id);
+        obj.files = await hydrateFiles(skill);
         return formatResult({ created: true, skill: obj });
       } catch (err) {
         return formatError(err.message);
@@ -135,8 +213,30 @@ function registerSkillTools(server) {
   );
 
   server.tool(
+    "delete_skill",
+    "Delete a skill and its entire folder tree (SKILL.md + every file/sub-folder under skill.folder_id).",
+    { id: z.string() },
+    async (params, extra) => {
+      try {
+        await resolveCaller(extra);
+        const skill = await Skill.findByIdAndDelete(params.id).lean();
+        if (!skill) return formatError("skill not found");
+        if (skill.folder_id) {
+          const descendants = await listDescendants(skill.folder_id);
+          const ids = descendants.map((d) => d._id.toString());
+          ids.push(skill.folder_id);
+          await File.deleteMany({ _id: { $in: ids } });
+        }
+        return formatResult({ deleted: true, id: params.id });
+      } catch (err) {
+        return formatError(err.message);
+      }
+    },
+  );
+
+  server.tool(
     "update_skill",
-    "Update fields of a skill. To edit a skill's files (including SKILL.md), use create_file/update_file/delete_file with skill_id:<skill_id>.",
+    "Update fields of a skill. To edit a skill's files (including SKILL.md), use create_file/update_file/delete_file under parent_id=<skill.folder_id>.",
     {
       id: z.string(),
       fields: z
@@ -153,7 +253,10 @@ function registerSkillTools(server) {
         await resolveCaller(extra);
         const skill = await Skill.findByIdAndUpdate(params.id, { $set: params.fields }, { new: true }).lean();
         if (!skill) return formatError("skill not found");
-        skill.files = await hydrateFiles(skill._id);
+        if (params.fields?.name && skill.folder_id) {
+          await File.findByIdAndUpdate(skill.folder_id, { name: params.fields.name });
+        }
+        skill.files = await hydrateFiles(skill);
         return formatResult({ updated: true, skill });
       } catch (err) {
         return formatError(err.message);

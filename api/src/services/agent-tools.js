@@ -15,8 +15,9 @@ const { getDriver } = require("../connectors");
 
 const SKILL_ENTRYPOINT = "SKILL.md";
 
-async function loadSkillEntrypoint(skillId) {
-  const file = await File.findOne({ skill_id: skillId.toString(), name: SKILL_ENTRYPOINT }).lean();
+async function loadSkillEntrypoint(skill) {
+  if (!skill?.folder_id) return "";
+  const file = await File.findOne({ parent_id: skill.folder_id, name: SKILL_ENTRYPOINT }).lean();
   return file?.content_md || "";
 }
 
@@ -38,7 +39,7 @@ const INTERNAL_TOOLS = [
       if (agent?._id) q.agent_id = agent._id.toString();
       const skill = await Skill.findOne(q).lean();
       if (!skill) throw new Error(`skill "${input.name}" not found`);
-      const body_md = await loadSkillEntrypoint(skill._id);
+      const body_md = await loadSkillEntrypoint(skill);
       return { name: skill.name, description: skill.description || "", body_md };
     },
   },

@@ -16,6 +16,7 @@ const NOT_FOUND = "NOT_FOUND";
  * @param {function} opts.scopeQuery      (req, query) => mutate query for additional scoping
  * @param {function} opts.afterCreate     (doc, req) => void | Promise; fires after a successful create
  * @param {function} opts.afterUpdate     (doc, req) => void | Promise; fires after a successful update
+ * @param {function} opts.beforeDelete    (doc, req) => void | Promise; may throw {status, code, message} to reject
  * @param {function} opts.afterDelete     (id, req) => void | Promise; fires after a successful delete
  */
 function buildCrud(Model, opts = {}) {
@@ -30,6 +31,7 @@ function buildCrud(Model, opts = {}) {
     scopeQuery = null,
     afterCreate = null,
     afterUpdate = null,
+    beforeDelete = null,
     afterDelete = null,
   } = opts;
 
@@ -95,6 +97,16 @@ function buildCrud(Model, opts = {}) {
 
   router.delete("/:id", auth, async (req, res) => {
     try {
+      if (beforeDelete) {
+        const existing = await Model.findById(req.params.id);
+        if (!existing) return res.status(404).send({ ok: false, code: NOT_FOUND });
+        try {
+          await beforeDelete(existing, req);
+        } catch (rejection) {
+          const status = rejection.status || 400;
+          return res.status(status).send({ ok: false, code: rejection.code || "REJECTED", message: rejection.message });
+        }
+      }
       const data = await Model.findByIdAndDelete(req.params.id);
       if (!data) return res.status(404).send({ ok: false, code: NOT_FOUND });
       if (afterDelete) await afterDelete(req.params.id, req);

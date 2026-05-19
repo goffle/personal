@@ -3,6 +3,7 @@ const passport = require("passport");
 
 const Skill = require("../models/skill");
 const File = require("../models/file");
+const { ensureSkillsRoot } = require("../services/skill-folders");
 
 const SERVER_ERROR = "SERVER_ERROR";
 const NOT_FOUND = "NOT_FOUND";
@@ -11,50 +12,97 @@ const ENTRYPOINT = "SKILL.md";
 const router = express.Router();
 const auth = passport.authenticate(["user", "admin"], { session: false });
 
-// Files belonging to skills are stored as top-level File docs with
-// skill_id = <skill._id>. The REST contract still exposes them as an embedded
-// `files: [{_id, path, body_md}]` array so the skills page stays happy.
+// A skill's files live as regular File docs under the folder pointed to by
+// skill.folder_id. Sub-folders are real File docs of kind:"folder". The REST
+// contract still exposes them as a flat `files: [{_id, path, body_md}]` array
+// (path = slash-joined segments) so the /skills page stays unchanged.
 
-function fileToSkillFile(file) {
-  return { _id: file._id, path: file.name, body_md: file.content_md || "" };
+// ---------- Hydration -----------------------------------------------------
+
+async function listDescendants(rootId) {
+  const acc = [];
+  const frontier = [rootId];
+  while (frontier.length) {
+    const next = [];
+    const kids = await File.find({ parent_id: { $in: frontier } }).lean();
+    for (const k of kids) {
+      acc.push(k);
+      if (k.kind === "folder") next.push(k._id.toString());
+    }
+    frontier.length = 0;
+    frontier.push(...next);
+  }
+  return acc;
+}
+
+function buildPaths(rootId, descendants) {
+  const byId = new Map(descendants.map((d) => [d._id.toString(), d]));
+  function pathOf(node) {
+    const segments = [node.name];
+    let cur = node;
+    while (cur.parent_id && cur.parent_id !== rootId) {
+      cur = byId.get(cur.parent_id);
+      if (!cur) break;
+      segments.unshift(cur.name);
+    }
+    return segments.join("/");
+  }
+  return descendants
+    .filter((d) => d.kind === "file")
+    .map((f) => ({ _id: f._id, path: pathOf(f), body_md: f.content_md || "" }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
 
 async function hydrateOne(skill) {
   if (!skill) return skill;
-  const files = await File.find({ skill_id: skill._id.toString() }).sort({ name: 1 }).lean();
   const obj = typeof skill.toObject === "function" ? skill.toObject() : { ...skill };
-  obj.files = files.map(fileToSkillFile);
+  if (!skill.folder_id) {
+    obj.files = [];
+    return obj;
+  }
+  const descendants = await listDescendants(skill.folder_id);
+  obj.files = buildPaths(skill.folder_id, descendants);
   return obj;
 }
 
 async function hydrateMany(skills) {
-  if (!skills.length) return skills;
-  const ids = skills.map((s) => s._id.toString());
-  const files = await File.find({ skill_id: { $in: ids } }).sort({ name: 1 }).lean();
-  const bySkill = new Map();
-  for (const f of files) {
-    if (!bySkill.has(f.skill_id)) bySkill.set(f.skill_id, []);
-    bySkill.get(f.skill_id).push(fileToSkillFile(f));
-  }
-  return skills.map((s) => {
-    const obj = typeof s.toObject === "function" ? s.toObject() : { ...s };
-    obj.files = bySkill.get(s._id.toString()) || [];
-    return obj;
-  });
+  return Promise.all(skills.map(hydrateOne));
 }
 
-// Diff incoming {path, body_md}[] against current File docs for this skill.
+// ---------- Sync ----------------------------------------------------------
+
+// Ensure the chain of folder names `segments` exists under `rootId`, creating
+// any missing ones. Returns the leaf folder _id.
+async function ensureFolderChain({ rootId, segments, organization_id, created_by }) {
+  let parent = rootId;
+  for (const name of segments) {
+    let folder = await File.findOne({ parent_id: parent, name, kind: "folder" });
+    if (!folder) {
+      folder = await File.create({ name, kind: "folder", parent_id: parent, organization_id, created_by });
+    }
+    parent = folder._id.toString();
+  }
+  return parent;
+}
+
+// Diff incoming {path, body_md}[] against the current tree under skill.folder_id.
 // Upsert by path, delete any paths no longer present. Always ensures SKILL.md
-// exists so freshly created skills are never empty.
+// exists at the root so freshly created skills are never empty.
 async function syncSkillFiles({ skill, incoming, user }) {
-  const skillId = skill._id.toString();
-  const existing = await File.find({ skill_id: skillId });
-  const byPath = new Map(existing.map((f) => [f.name, f]));
+  const rootId = skill.folder_id;
+  if (!rootId) throw new Error(`skill ${skill._id} has no folder_id`);
 
   const items = Array.isArray(incoming) ? incoming.slice() : [];
   if (!items.some((it) => (it?.path || "").trim() === ENTRYPOINT)) {
     items.unshift({ path: ENTRYPOINT, body_md: "" });
   }
+
+  // Index current files by reconstructed path.
+  const descendants = await listDescendants(rootId);
+  const current = buildPaths(rootId, descendants);
+  const byPath = new Map();
+  const fileById = new Map(descendants.map((d) => [d._id.toString(), d]));
+  for (const f of current) byPath.set(f.path, fileById.get(f._id.toString()));
 
   const seen = new Set();
   for (const item of items) {
@@ -62,28 +110,44 @@ async function syncSkillFiles({ skill, incoming, user }) {
     if (!path) continue;
     if (seen.has(path)) continue;
     seen.add(path);
+
     const body = item.body_md || "";
-    const current = byPath.get(path);
-    if (current) {
-      if (current.content_md !== body) {
-        current.content_md = body;
-        await current.save();
+    const existing = byPath.get(path);
+    if (existing) {
+      if (existing.content_md !== body) {
+        await File.findByIdAndUpdate(existing._id, { content_md: body });
       }
-    } else {
-      await File.create({
-        name: path,
-        kind: "file",
-        skill_id: skillId,
-        content_md: body,
-        organization_id: skill.organization_id,
-        created_by: user?._id?.toString(),
-      });
+      continue;
     }
+
+    const segments = path.split("/").filter(Boolean);
+    const leafName = segments.pop();
+    const parentId = await ensureFolderChain({
+      rootId,
+      segments,
+      organization_id: skill.organization_id,
+      created_by: user?._id?.toString(),
+    });
+    await File.create({
+      name: leafName,
+      kind: "file",
+      parent_id: parentId,
+      content_md: body,
+      organization_id: skill.organization_id,
+      created_by: user?._id?.toString(),
+    });
   }
 
-  const toDelete = existing.filter((f) => !seen.has(f.name)).map((f) => f._id);
+  const toDelete = current.filter((f) => !seen.has(f.path)).map((f) => f._id);
   if (toDelete.length) await File.deleteMany({ _id: { $in: toDelete } });
 }
+
+async function createSkillFolder({ name, organization_id, created_by }) {
+  const parentId = await ensureSkillsRoot({ organization_id, created_by });
+  return await File.create({ name, kind: "folder", parent_id: parentId, organization_id, created_by });
+}
+
+// ---------- Routes --------------------------------------------------------
 
 router.post("/search", auth, async (req, res) => {
   try {
@@ -124,7 +188,13 @@ router.get("/:id", auth, async (req, res) => {
 router.post("/", auth, async (req, res) => {
   try {
     const { files, ...skillFields } = req.body || {};
-    const skill = await Skill.create({ ...skillFields, created_by: req.user._id.toString() });
+    const created_by = req.user._id.toString();
+    const folder = await createSkillFolder({
+      name: skillFields.name || "Untitled skill",
+      organization_id: skillFields.organization_id,
+      created_by,
+    });
+    const skill = await Skill.create({ ...skillFields, folder_id: folder._id.toString(), created_by });
     await syncSkillFiles({ skill, incoming: files, user: req.user });
     const data = await hydrateOne(skill);
     return res.status(200).send({ ok: true, data });
@@ -139,6 +209,9 @@ router.put("/:id", auth, async (req, res) => {
     const { files, ...patch } = req.body || {};
     const skill = await Skill.findByIdAndUpdate(req.params.id, patch, { new: true });
     if (!skill) return res.status(404).send({ ok: false, code: NOT_FOUND });
+    if (patch.name && skill.folder_id) {
+      await File.findByIdAndUpdate(skill.folder_id, { name: patch.name });
+    }
     if (Array.isArray(files)) {
       await syncSkillFiles({ skill, incoming: files, user: req.user });
     }
@@ -154,7 +227,12 @@ router.delete("/:id", auth, async (req, res) => {
   try {
     const skill = await Skill.findByIdAndDelete(req.params.id);
     if (!skill) return res.status(404).send({ ok: false, code: NOT_FOUND });
-    await File.deleteMany({ skill_id: req.params.id });
+    if (skill.folder_id) {
+      const descendants = await listDescendants(skill.folder_id);
+      const ids = descendants.map((d) => d._id.toString());
+      ids.push(skill.folder_id);
+      await File.deleteMany({ _id: { $in: ids } });
+    }
     return res.status(200).send({ ok: true });
   } catch (err) {
     return res.status(500).send({ ok: false, code: SERVER_ERROR });
