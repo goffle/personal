@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 const passport = require("passport");
 const jwt = require("jsonwebtoken");
@@ -16,6 +17,20 @@ const USER_ALREADY_EXISTS = "USER_ALREADY_EXISTS";
 const PASSWORD_NOT_VALIDATED = "PASSWORD_NOT_VALIDATED";
 const INVALID_BODY = "INVALID_BODY";
 const NOT_FOUND = "NOT_FOUND";
+const FORBIDDEN = "FORBIDDEN";
+const INVITE_INVALID = "INVITE_INVALID";
+const ALREADY_MEMBER = "ALREADY_MEMBER";
+
+const INVITE_TTL_DAYS = 7;
+
+function membership(user, orgId) {
+  return (user.organisations || []).find((o) => o.id === orgId);
+}
+
+function canManage(user, orgId) {
+  const m = membership(user, orgId);
+  return m && (m.role === "owner" || m.role === "admin");
+}
 
 const COOKIE_MAX_AGE = 30 * 24 * 60 * 60 * 1000;
 const JWT_MAX_AGE = "30d";
@@ -161,6 +176,107 @@ router.put("/:id", passport.authenticate("user", { session: false }), async (req
     const data = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
     return res.status(200).send({ ok: true, data });
   } catch (err) {
+    return res.status(500).send({ ok: false, code: SERVER_ERROR });
+  }
+});
+
+router.post("/invite", passport.authenticate("user", { session: false }), async (req, res) => {
+  try {
+    const email = (req.body.email || "").trim().toLowerCase();
+    const organization_id = req.body.organization_id;
+    const role = ["owner", "admin", "member"].includes(req.body.role) ? req.body.role : "member";
+
+    if (!email || !organization_id) return res.status(400).send({ ok: false, code: INVALID_BODY });
+    if (!canManage(req.user, organization_id)) return res.status(403).send({ ok: false, code: FORBIDDEN });
+
+    const org = await Organization.findById(organization_id);
+    if (!org) return res.status(404).send({ ok: false, code: NOT_FOUND });
+
+    let user = await User.findOne({ email });
+
+    if (user && membership(user, organization_id)) {
+      return res.status(409).send({ ok: false, code: ALREADY_MEMBER });
+    }
+
+    if (user) {
+      user.organisations.push({ id: org._id.toString(), name: org.name, role });
+      await user.save();
+      return res.status(200).send({ ok: true, data: user, already_existed: true });
+    }
+
+    const token = crypto.randomBytes(24).toString("hex");
+    user = await User.create({
+      email,
+      organisations: [{ id: org._id.toString(), name: org.name, role }],
+      invite_token: token,
+      invite_expires_at: new Date(Date.now() + INVITE_TTL_DAYS * 24 * 60 * 60 * 1000),
+      invited_by: req.user._id.toString(),
+    });
+
+    const accept_url = `${config.APP_URL}/auth/accept-invite?token=${token}`;
+    return res.status(200).send({ ok: true, data: user, accept_url });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send({ ok: false, code: SERVER_ERROR });
+  }
+});
+
+router.post("/accept-invite", async (req, res) => {
+  try {
+    const { token, password, firstname, lastname } = req.body;
+    if (!token || !password) return res.status(400).send({ ok: false, code: INVALID_BODY });
+    if (!validatePassword(password)) return res.status(400).send({ ok: false, code: PASSWORD_NOT_VALIDATED });
+
+    const user = await User.findOne({ invite_token: token });
+    if (!user || !user.invite_expires_at || user.invite_expires_at < new Date()) {
+      return res.status(400).send({ ok: false, code: INVITE_INVALID });
+    }
+
+    user.password = password;
+    if (firstname) user.firstname = firstname;
+    if (lastname) user.lastname = lastname;
+    user.invite_token = undefined;
+    user.invite_expires_at = undefined;
+    user.registered_at = new Date();
+    user.last_login_at = new Date();
+    await user.save();
+
+    const orgIds = (user.organisations || []).map((o) => o.id);
+    const organisations = orgIds.length ? await Organization.find({ _id: { $in: orgIds } }).lean() : [];
+
+    const tk = jwt.sign({ _id: user._id }, config.JWT_SECRET, { expiresIn: JWT_MAX_AGE });
+    res.cookie("jwt", tk, cookieOptions());
+    return res.status(200).send({ ok: true, token: tk, user: user.toJSON(), organisations });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send({ ok: false, code: SERVER_ERROR });
+  }
+});
+
+router.delete("/:id", passport.authenticate("user", { session: false }), async (req, res) => {
+  try {
+    const organization_id = req.query.organization_id || req.body.organization_id;
+    if (!organization_id) return res.status(400).send({ ok: false, code: INVALID_BODY, message: "organization_id required" });
+
+    const isSelf = req.user._id.toString() === req.params.id;
+    if (!isSelf && !canManage(req.user, organization_id)) {
+      return res.status(403).send({ ok: false, code: FORBIDDEN });
+    }
+
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).send({ ok: false, code: NOT_FOUND });
+    if (!membership(target, organization_id)) return res.status(404).send({ ok: false, code: NOT_FOUND });
+
+    const remaining = target.organisations.filter((o) => o.id !== organization_id);
+    if (remaining.length === 0) {
+      await User.findByIdAndDelete(target._id);
+    } else {
+      target.organisations = remaining;
+      await target.save();
+    }
+    return res.status(200).send({ ok: true });
+  } catch (err) {
+    console.error(err);
     return res.status(500).send({ ok: false, code: SERVER_ERROR });
   }
 });

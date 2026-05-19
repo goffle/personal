@@ -19,6 +19,10 @@ const UserSchema = new mongoose.Schema(
       },
     ],
 
+    invite_token: { type: String, index: true, sparse: true },
+    invite_expires_at: { type: Date },
+    invited_by: { type: String },
+
     last_login_at: { type: Date },
     registered_at: { type: Date, default: Date.now },
   },

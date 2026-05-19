@@ -18,6 +18,7 @@ import Skills from "@/pages/skills";
 import Connectors from "@/pages/connectors";
 import Mcp from "@/pages/mcp";
 import Usages from "@/pages/usages";
+import Members from "@/pages/members";
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
             <Route path="/connectors/*" element={<Connectors />} />
             <Route path="/mcp/*" element={<Mcp />} />
             <Route path="/usages" element={<Usages />} />
+            <Route path="/members" element={<Members />} />
           </Route>
         </Route>
 

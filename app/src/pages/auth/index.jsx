@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, Route, Routes } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Route, Routes, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import API from "@/services/api";
@@ -14,6 +14,7 @@ export default function Auth() {
         <Routes>
           <Route index element={<SignIn />} />
           <Route path="signup" element={<SignUp />} />
+          <Route path="accept-invite" element={<AcceptInvite />} />
         </Routes>
       </div>
     </div>
@@ -109,6 +110,63 @@ function SignUp() {
           Sign in
         </Link>
       </p>
+    </form>
+  );
+}
+
+function AcceptInvite() {
+  const { setUser, setOrganization } = useStore();
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const token = params.get("token") || "";
+  const [form, setForm] = useState({ firstname: "", lastname: "", password: "" });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!token) toast.error("Missing invite token");
+  }, [token]);
+
+  async function submit(e) {
+    e.preventDefault();
+    if (!token) return;
+    setLoading(true);
+    try {
+      const r = await API.post("/user/accept-invite", { token, ...form });
+      if (!r.ok) {
+        toast.error(r.code || r.message || "Could not accept invite");
+        return;
+      }
+      API.setToken(r.token);
+      setUser(r.user);
+      setOrganization(r.organisations?.[0] || null);
+      toast.success("Welcome!");
+      navigate("/");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!token) {
+    return (
+      <p className="text-sm text-slate-600">
+        This link is invalid. Ask whoever invited you to send a new one.
+      </p>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="First name" value={form.firstname} onChange={(v) => setForm({ ...form, firstname: v })} autoFocus />
+        <Field label="Last name" value={form.lastname} onChange={(v) => setForm({ ...form, lastname: v })} />
+      </div>
+      <Field label="Password" type="password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
+      <button
+        disabled={loading}
+        className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+      >
+        {loading ? "Accepting…" : "Accept invite"}
+      </button>
     </form>
   );
 }
