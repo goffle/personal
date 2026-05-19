@@ -15,7 +15,7 @@ require("./services/passport")(app);
 
 const origin = [APP_URL].filter(Boolean);
 if (ENVIRONMENT === "development") {
-  origin.push("http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000");
+  origin.push("http://localhost:3000", "http://localhost:3001", "http://localhost:5173", "http://127.0.0.1:3000");
 }
 // Allow Claude.ai's MCP UI to call the OAuth + MCP endpoints
 origin.push("https://claude.ai", "https://claude.com");
