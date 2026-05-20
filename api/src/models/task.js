@@ -26,6 +26,7 @@ const TaskSchema = new mongoose.Schema(
     reference: { type: String, required: true, index: true },
     external_id: { type: String, index: true },
     due_at: { type: Date },
+    finished_at: { type: Date },
     created_by: { type: String },
     comment_count: { type: Number, default: 0 },
     checklist: { type: [ChecklistItemSchema], default: [] },

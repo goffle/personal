@@ -136,6 +136,7 @@ function registerTaskTools(server) {
         if (params.due_at) payload.due_at = new Date(params.due_at);
         if (params.external_id) payload.external_id = params.external_id;
         if (params.checklist) payload.checklist = params.checklist;
+        if (payload.status === "done") payload.finished_at = new Date();
 
         const task = await Task.create(payload);
         return formatResult({ created: true, task: { ...task.toObject(), url: taskUrl(task._id) } });
@@ -172,7 +173,17 @@ function registerTaskTools(server) {
         }
         if (Object.keys(update).length === 0) return formatError("No fields provided to update");
         if (update.due_at) update.due_at = new Date(update.due_at);
-        const task = await Task.findByIdAndUpdate(id, { $set: update }, { new: true }).lean();
+        let mutation;
+        if (update.status !== undefined) {
+          const current = await Task.findById(id, { status: 1 }).lean();
+          if (!current) return formatError("Task not found");
+          if (update.status === "done" && current.status !== "done") {
+            update.finished_at = new Date();
+          } else if (update.status !== "done" && current.status === "done") {
+            mutation = { $set: update, $unset: { finished_at: "" } };
+          }
+        }
+        const task = await Task.findByIdAndUpdate(id, mutation || { $set: update }, { new: true }).lean();
         if (!task) return formatError("Task not found");
         return formatResult({ updated: true, task: { ...task, url: taskUrl(task._id) } });
       } catch (err) {
