@@ -44,7 +44,7 @@ export default function App() {
             <Route path="/connectors/*" element={<Connectors />} />
             <Route path="/mcp/*" element={<Mcp />} />
             <Route path="/usages" element={<Usages />} />
-            <Route path="/members" element={<Members />} />
+            <Route path="/members/*" element={<Members />} />
           </Route>
         </Route>
 

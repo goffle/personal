@@ -26,6 +26,7 @@ export default function TaskDetail() {
   const [task, setTask] = useState(null);
   const [comments, setComments] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [members, setMembers] = useState([]);
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const [savingField, setSavingField] = useState(null);
@@ -33,14 +34,16 @@ export default function TaskDetail() {
 
   async function load() {
     setLoading(true);
-    const [t, c, a] = await Promise.all([
+    const [t, c, a, m] = await Promise.all([
       API.get(`/task/${id}`),
       API.post("/comment/search", { task_id: id }),
       API.post("/agent/search", { organization_id: organization?._id, limit: 100 }),
+      API.post("/user/search", { organization_id: organization?._id, limit: 200 }),
     ]);
     if (t.ok) setTask(t.data);
     if (c.ok) setComments(c.data);
     if (a.ok) setAgents(a.data);
+    if (m.ok) setMembers(m.data);
     setLoading(false);
   }
 
@@ -71,6 +74,10 @@ export default function TaskDetail() {
     setSavingField(null);
   }
 
+  function memberName(m) {
+    return `${m.firstname || ""} ${m.lastname || ""}`.trim() || m.email || "User";
+  }
+
   function meName() {
     return `${user?.firstname || ""} ${user?.lastname || ""}`.trim() || user?.email || "Me";
   }
@@ -83,7 +90,11 @@ export default function TaskDetail() {
   function onAssigneeChange(key) {
     if (!key) return patch({ assignee_id: null, assignee_name: null, assignee_type: null });
     const [type, sid] = key.split(":");
-    if (type === "user") return patch({ assignee_id: sid, assignee_name: meName(), assignee_type: "user" });
+    if (type === "user") {
+      const m = members.find((x) => x._id === sid);
+      const name = m ? memberName(m) : sid === user?._id ? meName() : "User";
+      return patch({ assignee_id: sid, assignee_name: name, assignee_type: "user" });
+    }
     const ag = agents.find((x) => x._id === sid);
     return patch({ assignee_id: sid, assignee_name: ag?.name || "Agent", assignee_type: "agent" });
   }
@@ -365,7 +376,10 @@ export default function TaskDetail() {
               value={assigneeKey(task)}
               options={[
                 { value: "", label: "—" },
-                ...(user?._id ? [{ value: `user:${user._id}`, label: meName() }] : []),
+                ...members.map((m) => ({ value: `user:${m._id}`, label: m._id === user?._id ? meName() : memberName(m) })),
+                ...(task.assignee_id && task.assignee_type === "user" && !members.find((m) => m._id === task.assignee_id)
+                  ? [{ value: `user:${task.assignee_id}`, label: task.assignee_name || "User" }]
+                  : []),
                 ...agents.map((a) => ({ value: `agent:${a._id}`, label: a.name })),
                 ...(task.assignee_id && task.assignee_type === "agent" && !agents.find((a) => a._id === task.assignee_id)
                   ? [{ value: `agent:${task.assignee_id}`, label: task.assignee_name || "Agent" }]

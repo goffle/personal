@@ -170,12 +170,44 @@ router.put("/", passport.authenticate("user", { session: false }), async (req, r
 
 router.put("/:id", passport.authenticate("user", { session: false }), async (req, res) => {
   try {
-    if (!req.user.role_admin && req.user._id.toString() !== req.params.id) {
-      return res.status(403).send({ ok: false, code: "FORBIDDEN" });
+    const isSelf = req.user._id.toString() === req.params.id;
+    const isSysAdmin = !!req.user.role_admin;
+    const { organization_id, role, firstname, lastname, email, avatar } = req.body;
+
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).send({ ok: false, code: NOT_FOUND });
+
+    // Role change within an org: requires canManage on that org, never self.
+    if (role !== undefined || organization_id !== undefined) {
+      if (!organization_id || !["owner", "admin", "member"].includes(role)) {
+        return res.status(400).send({ ok: false, code: INVALID_BODY });
+      }
+      if (!canManage(req.user, organization_id)) return res.status(403).send({ ok: false, code: FORBIDDEN });
+      if (isSelf) return res.status(400).send({ ok: false, code: "CANNOT_CHANGE_OWN_ROLE" });
+      const m = (target.organisations || []).find((o) => o.id === organization_id);
+      if (!m) return res.status(404).send({ ok: false, code: NOT_FOUND });
+      m.role = role;
+      target.markModified("organisations");
     }
-    const data = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    return res.status(200).send({ ok: true, data });
+
+    // Profile fields: self, sysadmin, or org owner/admin sharing an org with target.
+    const hasProfileEdit = firstname !== undefined || lastname !== undefined || email !== undefined || avatar !== undefined;
+    if (hasProfileEdit) {
+      if (!isSelf && !isSysAdmin) {
+        const sharedManaged = (target.organisations || []).some((o) => canManage(req.user, o.id));
+        if (!sharedManaged) return res.status(403).send({ ok: false, code: FORBIDDEN });
+      }
+      if (firstname !== undefined) target.firstname = firstname;
+      if (lastname !== undefined) target.lastname = lastname;
+      if (email !== undefined) target.email = (email || "").trim().toLowerCase();
+      if (avatar !== undefined) target.avatar = avatar;
+    }
+
+    await target.save();
+    return res.status(200).send({ ok: true, data: target });
   } catch (err) {
+    if (err.code === 11000) return res.status(409).send({ ok: false, code: USER_ALREADY_EXISTS });
+    console.error(err);
     return res.status(500).send({ ok: false, code: SERVER_ERROR });
   }
 });
