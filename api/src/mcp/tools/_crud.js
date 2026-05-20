@@ -31,6 +31,7 @@ function registerCrudTools(server, opts) {
     extraFilters = {},
     beforeCreate,
     beforeUpdate,
+    skipSearch = false,
   } = opts;
 
   const searchParams = {
@@ -43,7 +44,7 @@ function registerCrudTools(server, opts) {
     searchParams[key] = cfg.type.optional();
   }
 
-  server.tool(
+  if (!skipSearch) server.tool(
     `search_${namePlural}`,
     `Search ${namePlural} in the caller's workspace.`,
     searchParams,
